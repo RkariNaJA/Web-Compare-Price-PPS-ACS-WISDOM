@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPS vs DB — LOCAL_QUOTE_AMOUNT Validator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f18;--surface:#14172280;--surface2:#1e2236;--surface3:#252a42;
+  --border:#2a2f50;--border2:#363d66;
+  --a:#6c7fff;--a2:#a5aeff;--a-glow:rgba(108,127,255,.18);
+  --b:#ff7eb3;--b2:#ffb3d1;--b-glow:rgba(255,126,179,.18);
+  --match:#4ade80;--mismatch:#f87171;--only:#facc15;
+  --text:#e8eaf6;--muted:#7880a8;--dim:#404878;
+  --mono:'JetBrains Mono',monospace;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
+header{padding:10px 24px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.logo{width:38px;height:38px;background:linear-gradient(135deg,var(--a),var(--b));border-radius:10px;display:grid;place-items:center;font-size:18px;flex-shrink:0;}
+header h1{font-size:1rem;font-weight:650;letter-spacing:-.015em;}
+header p{font-size:.76rem;color:var(--muted);margin-top:2px;}
+.upload-strip{display:grid;grid-template-columns:1fr 48px 1fr;gap:0;border-bottom:1px solid var(--border);background:var(--surface);padding:10px 24px;align-items:start;flex-shrink:0;}
+.upload-strip .vs{display:flex;align-items:center;justify-content:center;height:100%;font-size:.7rem;font-weight:700;letter-spacing:.1em;color:var(--dim);}
+.file-slot{display:flex;flex-direction:column;gap:8px;}
+.file-slot.left{padding-right:16px;}
+.file-slot.right{padding-left:16px;}
+.slot-label{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;}
+.slot-label.la{color:var(--a2);}
+.slot-label.lb{color:var(--b2);}
+.dropzone{border:2px dashed var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;position:relative;transition:border-color .2s,background .2s;}
+.dropzone:hover,.dropzone.drag{background:rgba(255,255,255,.03);}
+.dropzone.la:hover,.dropzone.la.drag{border-color:var(--a);}
+.dropzone.lb:hover,.dropzone.lb.drag{border-color:var(--b);}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+.dropzone p{font-size:.78rem;color:var(--muted);line-height:1.5;}
+.file-pills{display:flex;flex-direction:column;gap:6px;}
+.file-pill{display:flex;align-items:center;gap:8px;background:var(--surface2);border-radius:8px;padding:8px 12px;border:1px solid var(--border);}
+.file-pill .pill-icon{font-size:1rem;flex-shrink:0;}
+.file-pill .pill-name{flex:1;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-pill .pill-rows{font-size:.65rem;color:var(--muted);font-family:var(--mono);flex-shrink:0;margin-right:4px;}
+.file-pill .pill-color{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.file-pill .pill-del{cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:4px;font-size:.8rem;transition:color .15s;flex-shrink:0;}
+.file-pill .pill-del:hover{color:var(--mismatch);}
+.preview-container{margin-top:6px;max-height:70px;overflow:auto;border:1px solid var(--border);border-radius:4px;background:rgba(20,23,34,0.6);display:none;}
+.preview-container.active{display:block;}
+.preview-table{width:100%;border-collapse:collapse;font-size:.6rem;font-family:var(--mono);}
+.preview-table th{position:sticky;top:0;background:var(--surface3);color:var(--muted);padding:4px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;}
+.preview-table td{padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03);color:var(--text);white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;}
+.preview-title{font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;justify-content:space-between;}
+#keyInfoPanel{border-bottom:1px solid var(--border);padding:14px 32px;background:var(--surface);flex-shrink:0;display:none;}
+#keyInfoPanel h2{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.key-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+.key-chip{display:flex;align-items:center;gap:6px;background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:7px;padding:6px 12px;font-size:.72rem;color:var(--only);}
+.key-chip .arrow{color:var(--dim);font-size:.65rem;}
+.key-chip .side-a{color:var(--a2);}
+.key-chip .side-b{color:var(--b2);}
+.logic-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:.72rem;line-height:1.6;color:var(--muted);margin-bottom:12px;}
+.logic-box code{background:rgba(108,127,255,.12);color:var(--a2);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.68rem;}
+.logic-box .hl-match{color:var(--match);}
+.logic-box .hl-ext{color:var(--b2);}
+.map-actions{display:flex;gap:10px;}
+.btn{border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;padding:9px 18px;transition:opacity .15s;}
+.btn-primary{background:linear-gradient(135deg,var(--a),#8b7fff);color:#fff;box-shadow:0 4px 12px var(--a-glow);}
+.btn-primary:hover{opacity:.88;}
+.btn-ghost{background:var(--surface2);border:1px solid var(--border);color:var(--muted);}
+.btn-ghost:hover{color:var(--text);border-color:var(--border2);}
+#resultsPanel{flex:1;display:none;flex-direction:column;overflow:hidden;}
+.results-toolbar{display:flex;align-items:center;gap:12px;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0;}
+.stat-pill{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:.75rem;}
+.stat-pill .dot{width:8px;height:8px;border-radius:50%;}
+.stat-pill span{font-family:var(--mono);font-weight:600;}
+.filter-btns{display:flex;gap:6px;margin-left:auto;}
+.filter-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:5px 13px;font-size:.73rem;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+.filter-btn.active{border-color:var(--a);color:var(--a2);}
+.search-box{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;font-size:.78rem;font-family:'Inter',sans-serif;outline:none;width:180px;transition:border-color .15s;}
+.search-box:focus{border-color:var(--a);}
+.filter-select{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:.78rem;font-family:'Inter',sans-serif;outline:none;cursor:pointer;transition:border-color .15s;}
+.filter-select:focus,.filter-select:hover{border-color:var(--a);}
+.filter-select option{background:var(--surface2);color:var(--text);}
+.table-wrap{flex:1;overflow:auto;}
+.table-wrap::-webkit-scrollbar{width:6px;height:6px;}
+.table-wrap::-webkit-scrollbar-track{background:var(--bg);}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+table{border-collapse:collapse;font-size:.78rem;min-width:100%;}
+thead{position:sticky;top:0;z-index:10;}
+thead tr:first-child th{background:#0d0f18;padding:6px 14px 4px;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-bottom:none;}
+thead tr:first-child th.ha{color:var(--a2);}
+thead tr:first-child th.hb{color:var(--b2);}
+thead tr:first-child th.hrow{color:var(--muted);}
+thead tr:first-child th.hlogic{color:var(--only);}
+thead tr:nth-child(2) th{background:#0d0f18;padding:5px 14px 10px;border-bottom:1px solid var(--border);color:var(--muted);font-size:.68rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;}
+tbody tr{border-bottom:1px solid rgba(42,47,80,.45);}
+tbody tr:hover{background:var(--surface2);}
+tbody td{padding:8px 14px;font-family:var(--mono);font-size:.76rem;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;}
+td.row-num{color:var(--dim);font-size:.68rem;text-align:right;padding-right:10px;width:40px;}
+.cell-match{background:rgba(74,222,128,.09);color:#86efac;}
+.cell-miss{background:rgba(248,113,113,.09);color:#fca5a5;}
+.cell-empty{color:var(--dim);font-style:italic;}
+.cell-key-match{background:rgba(74,222,128,0.15);color:#86efac;}
+.cell-key-miss{background:rgba(250,204,21,0.05);color:var(--only);}
+.badge-match{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--match);margin-right:4px;vertical-align:middle;}
+.badge-miss{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mismatch);margin-right:4px;vertical-align:middle;}
+td.grp,th.grp{border-left:2px solid var(--border2);}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);padding:48px;text-align:center;}
+.empty-state .icon{font-size:52px;opacity:.25;}
+.empty-state h3{font-size:1rem;font-weight:500;color:var(--text);}
+.empty-state p{font-size:.82rem;max-width:340px;line-height:1.6;}
+.fob-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:.62rem;font-weight:600;margin-right:4px;vertical-align:middle;}
+.fob-tag.final{background:rgba(74,222,128,.15);color:var(--match);}
+.fob-tag.ext{background:rgba(255,126,179,.15);color:var(--b2);}
+.fob-tag.no-match{background:rgba(248,113,113,.12);color:var(--mismatch);}
+.src-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:4px;font-size:.62rem;font-weight:600;border:1px solid;}
+#toast{position:fixed;bottom:22px;right:22px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 16px;font-size:.8rem;box-shadow:0 8px 32px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;z-index:999;}
+#toast.show{opacity:1;}
+#toast.ok{border-color:var(--match);color:var(--match);}
+#toast.err{border-color:var(--mismatch);color:var(--mismatch);}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚡</div>
+  <div>
+    <h1>LOCAL_QUOTE_AMOUNT Validator</h1>
+    <p>PPS (File B) vs ACS Database — Validates LOCAL_QUOTE_AMOUNT against Final FOB / ExtSzFOB using size logic</p>
+  </div>
+</header>
+
+<div class="upload-strip">
+  <div class="file-slot left">
+    <div class="slot-label la">File A — ACS Database</div>
+    <div class="dropzone la" id="dzA" style="cursor:default;">
+      <button class="btn btn-primary" onclick="fetchFileAData()" id="fetchAButton">Load Data from DB</button>
+      <p id="loadingA" style="display:none;">Loading...</p>
+    </div>
+    <div class="preview-title" id="titleA" style="display:none;"><span>Preview File A</span><span id="metaA"></span></div>
+    <div class="preview-container" id="prevA"></div>
+  </div>
+  <div class="vs">VS</div>
+  <div class="file-slot right">
+    <div class="slot-label lb">File B — PPS Excel <span style="font-size:.6rem;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0;">(up to 4 files)</span></div>
+    <div class="dropzone lb" id="dzB">
+      <input type="file" id="inputB" accept=".xlsx,.xls,.csv" multiple>
+      <p id="dzBHint">📂 Click or drop up to 4 files<br><small>.xlsx · .xls · .csv</small></p>
+    </div>
+    <div class="file-pills" id="filePillsB"></div>
+    <div class="preview-title" id="titleB" style="display:none;"><span>Preview (all files combined)</span><span id="metaB"></span></div>
+    <div class="preview-container" id="prevB"></div>
+  </div>
+</div>
+
+<div id="keyInfoPanel">
+  <h2>
+    <span>Validation Configuration — Fixed Keys &amp; FOB Logic</span>
+    <span style="font-size:.6rem;color:var(--only);background:rgba(250,204,21,0.1);padding:2px 8px;border-radius:4px;font-weight:500;">
+      File B filtered to: SEASON_YEAR, STYLE, COLOR, FTYCODE, SIZE_DATA, LOCAL_QUOTE_AMOUNT
+    </span>
+  </h2>
+  <div class="key-grid">
+    <div class="key-chip">🔑 <span class="side-a">Season</span> <span class="arrow">↔</span> <span class="side-b">SEASON_YEAR</span></div>
+    <div class="key-chip">🔑 <span class="side-a">EXTRACTED_SIZE</span> <span class="arrow">↔</span> <span class="side-b">SIZE_DATA</span></div>
+    <div class="key-chip">🔑 <span class="side-a">StyleNumber</span> <span class="arrow">↔</span> <span class="side-b">STYLE</span></div>
+    <div class="key-chip">🔑 <span class="side-a">ColorwayCode</span> <span class="arrow">↔</span> <span class="side-b">COLOR</span></div>
+    <div class="key-chip">🔑 <span class="side-a">FactoryCode</span> <span class="arrow">↔</span> <span class="side-b">FTYCODE</span></div>
+  </div>
+  <div class="logic-box">
+    <strong style="color:var(--text);">FOB Selection Logic:</strong><br>
+    1. Convert File B <code>SIZE_DATA</code> → regular sizes → <code>ALL_REG_SIZE_RB</code> · extended sizes → <code>ALL_EXTEND_SIZE_RB</code><br>
+    2. Extract size from DB <code>CBDID</code> → normalize extended sizes → <code>ALL_EXTEND_SIZE_RB</code><br>
+    3. If converted File B size <span class="hl-match">== DB CBDID size</span> → compare <code>LOCAL_QUOTE_AMOUNT</code> vs <span class="hl-match">Final FOB</span><br>
+    4. If sizes <span class="hl-ext">don't match</span> → compare <code>LOCAL_QUOTE_AMOUNT</code> vs <span class="hl-ext">ExtSzFOB</span>
+  </div>
+  <div class="map-actions">
+    <button class="btn btn-primary" onclick="runComparison()">▶ Validate LOCAL_QUOTE_AMOUNT</button>
+  </div>
+</div>
+
+<div id="resultsPanel">
+  <div class="empty-state" id="emptyMsg">
+    <div class="icon">🔍</div>
+    <h3>Ready to validate</h3>
+    <p>Load data from DB and upload PPS file(s), then click <strong>Validate</strong>.</p>
+  </div>
+  <div id="resultsInner" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+    <div class="results-toolbar">
+      <div class="stat-pill"><span class="dot" style="background:var(--match)"></span>Match <span id="cntMatch">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--mismatch)"></span>Diff <span id="cntDiff">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--only)"></span>No Key Match <span id="cntNoKey">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--dim)"></span>Rows <span id="cntRows">0</span></div>
+      <div class="filter-btns">
+        <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+        <button class="filter-btn" onclick="setFilter('match',this)">Matches only</button>
+        <button class="filter-btn" onclick="setFilter('diff',this)">Differences only</button>
+        <button class="filter-btn" onclick="setFilter('nokey',this)">No Key Match</button>
+      </div>
+      <select class="filter-select" id="filterSeason" onchange="renderTable()" title="Filter by Season">
+        <option value="">All Seasons</option>
+      </select>
+      <select class="filter-select" id="filterFactory" onchange="renderTable()" title="Filter by Factory">
+        <option value="">All Factories</option>
+      </select>
+      <input class="search-box" type="text" placeholder="Search…" id="searchBox" oninput="renderTable()">
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:.75rem;" onclick="exportCSV()">⬇ CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table id="resultTable"><thead id="rHead"></thead><tbody id="rBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let dataA = null;
+let dataBFiles = [];
+let compRows = [];
+let filterMode = 'all';
+
+const BACKEND_URL = 'http://localhost:5001';
+const MAX_B_FILES = 4;
+
+const FILE_COLORS = [
+  { hex: '#6c7fff', bg: 'rgba(108,127,255,.12)', border: 'rgba(108,127,255,.4)' },
+  { hex: '#ff7eb3', bg: 'rgba(255,126,179,.12)', border: 'rgba(255,126,179,.4)' },
+  { hex: '#4ade80', bg: 'rgba(74,222,128,.12)',  border: 'rgba(74,222,128,.4)'  },
+  { hex: '#facc15', bg: 'rgba(250,204,21,.12)',  border: 'rgba(250,204,21,.4)'  },
+];
+
+const KEY_PAIRS = [
+  { a: 'Season',         b: 'SEASON_YEAR' },
+  { a: 'EXTRACTED_SIZE', b: 'SIZE_DATA'   },
+  { a: 'StyleNumber',    b: 'STYLE'       },
+  { a: 'ColorwayCode',   b: 'COLOR'       },
+  { a: 'FactoryCode',    b: 'FTYCODE'     }
+];
+
+// Keys used for index lookup (excludes SIZE which is handled separately)
+const JOIN_KEY_PAIRS = KEY_PAIRS.filter(kp => kp.a !== 'EXTRACTED_SIZE');
+
+const STRICT_B_COLS = ["SEASON_YEAR","STYLE","COLOR","FTYCODE","SIZE_DATA","LOCAL_QUOTE_AMOUNT"];
+
+const REG_SIZES = [
+  "0X","1X","2X","3X","4X","2XS","XS","S","M","L","XL","2XL",
+  "L/XL","S/M","S+","M+","L+","XL+","1SIZE",
+  "3-6","6-9","9-12","12-18","18-24",
+  "40","44","48","52","56",
+  "34R","36R","36+1","36+2","38R","38+1","38+2",
+  "40R","40+1","40+2","42R","42+1","42+2",
+  "44R","44+1","44+2","46R","46+1","46+2",
+  "34-1","36-1","38-1","40-1","42-1","44-1","46-1",
+  "44/4","46/4","48/4","50/4","52/4","54/4","56/4",
+  "44/6","46/4","48/6","50/6","52/6","54/6","56/6","58/6"
+];
+
+const EXTEND_SIZE = [
+  "4X","1X-T","2X-T","3X-T","3XL","4XL","5XL",
+  "S-T","M-T","L-T","L-TT","XL-T","2XL-T","3XL-T",
+  "4XL-T","5XL-T","MTT","LTT","XLTT","XL-TT",
+  "2XLTT","3XLTT","CUST1","CUST3","48","58","60",
+  "48R","48+1","48+2","48-1"
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// normalizeJoinKey — applied to BOTH DB and File B values when building/looking
+// up the index. Must be IDENTICAL for both sides or lookups will fail.
+//
+// Rules applied here:
+//   1. Trim whitespace (including internal gaps like "SP 27" → "SP27")
+//   2. ColorwayCode / COLOR: empty string → "ALL_SOLID"
+//   3. Lowercase everything
+// ─────────────────────────────────────────────────────────────────────────────
+function normalizeJoinKey(value, dbColName) {
+  // Remove ALL whitespace (handles "SP 27" == "SP27", "IW 3970" == "IW3970" etc.)
+  let s = String(value ?? '').replace(/\s+/g, '').toLowerCase();
+  // Blank color and certain special color codes all map to ALL_SOLID
+  if ((dbColName === 'ColorwayCode' || dbColName === 'COLOR') &&
+      (s === '' || s === 'all_htr' || s === 'all_aop' || s === 'retail' || s === 'solid1')) {
+    s = 'all_solid';
+  }
+  return s;
+}
+
+function convertBSize(size) {
+  const s = String(size).trim();
+  return REG_SIZES.includes(s) ? 'ALL_REG_SIZE_RB' : s;
+}
+
+function convertBExtendSize(size) {
+  const s = String(size).trim();
+  return EXTEND_SIZE.includes(s) ? 'ALL_EXTEND_SIZE_RB' : s;
+}
+
+function extractSizeFromCBDID(cbdid) {
+  const s = String(cbdid).trim();
+  if (!s) return '';
+  const parts = s.split('-');
+  if (parts.length < 6) return s;
+  // Join remaining parts with '_', replacing any leftover '-' separators
+  return parts.slice(5).join('_');
+}
+
+function matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx) {
+  if (!candidates.length) return null;
+  const rawL  = bRawSize.trim().toLowerCase();
+  const convL = bConvertedSize.trim().toLowerCase();
+  // 1. Exact match on converted size token
+  let m = candidates.find(c => String(c.row[sizeAIdx]??'').trim().toLowerCase() === convL);
+  if (m) return m;
+  // 2. Element-wise match (DB size may be compound e.g. "ALL_REG_SIZE_RB")
+  m = candidates.find(c => {
+    const parts = String(c.row[sizeAIdx]??'').trim().toLowerCase().split(/[_\-]+/);
+    return parts.includes(rawL) || parts.includes(convL);
+  });
+  if (m) return m;
+  // 3. Substring match
+  m = candidates.find(c => {
+    const dbSz = String(c.row[sizeAIdx]??'').trim().toLowerCase();
+    return dbSz.includes(rawL) || dbSz.includes(convL);
+  });
+  if (m) return m;
+  // 4. For extended sizes: prefer a non-REG row
+  if (convL !== 'all_reg_size_rb') {
+    m = candidates.find(c => !String(c.row[sizeAIdx]??'').trim().toLowerCase().includes('reg_size'));
+    if (m) return m;
+  }
+  return candidates[0] || null;
+}
+
+// ── File B multi-drop setup ──────────────────────────────────────────────────
+function setupDropB() {
+  const dz  = document.getElementById('dzB');
+  const inp = document.getElementById('inputB');
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', ()  => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    handleFilesB(Array.from(e.dataTransfer.files));
+  });
+  inp.addEventListener('change', () => { handleFilesB(Array.from(inp.files)); inp.value = ''; });
+}
+setupDropB();
+
+function handleFilesB(files) {
+  const remaining = MAX_B_FILES - dataBFiles.length;
+  if (remaining <= 0) { toast(`Maximum ${MAX_B_FILES} files already loaded`, 'err'); return; }
+  if (files.length > remaining) toast(`Only ${remaining} more file(s) accepted (max ${MAX_B_FILES})`, 'err');
+  files.slice(0, remaining).forEach(f => loadFileB(f));
+}
+
+function loadFileB(file) {
+  if (!file) return;
+  if (dataBFiles.find(f => f.name === file.name)) { toast(`"${file.name}" already loaded`, 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb  = XLSX.read(e.target.result, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!raw.length) return;
+
+      let headers = raw[0].map(h => String(h).trim());
+      let rows    = raw.slice(1).filter(r => r.some(c => c !== ''));
+
+      // Keep only the required columns
+      const keptIdx = [], keptHdr = [];
+      headers.forEach((h, i) => { if (STRICT_B_COLS.includes(h)) { keptIdx.push(i); keptHdr.push(h); } });
+      headers = keptHdr;
+      rows    = rows.map(r => keptIdx.map(i => r[i]));
+
+      // Add ORIG_SIZE_DATA (raw before conversion) and convert SIZE_DATA
+      const sizeIdx = headers.indexOf('SIZE_DATA');
+      if (sizeIdx !== -1) {
+        headers.push('ORIG_SIZE_DATA');
+        rows.forEach(r => {
+          const orig = String(r[sizeIdx]).trim();
+          r.push(orig);
+          let sz = convertBSize(orig);
+          if (sz !== 'ALL_REG_SIZE_RB') sz = convertBExtendSize(sz);
+          r[sizeIdx] = sz;
+        });
+      }
+
+      dataBFiles.push({ name: file.name, headers, rows, colorIdx: dataBFiles.length });
+      renderFilePills();
+      renderCombinedPreview();
+      toast(`Loaded "${file.name}" (${rows.length} rows)`, 'ok');
+      if (dataA && dataBFiles.length > 0) showKeyPanel();
+    } catch(err) { console.error(err); toast('Error reading: ' + file.name, 'err'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function removeFileB(idx) {
+  dataBFiles.splice(idx, 1);
+  dataBFiles.forEach((f, i) => f.colorIdx = i);
+  renderFilePills();
+  renderCombinedPreview();
+  if (dataBFiles.length === 0) {
+    document.getElementById('titleB').style.display = 'none';
+    document.getElementById('prevB').style.display  = 'none';
+    document.getElementById('keyInfoPanel').style.display  = 'none';
+    document.getElementById('resultsPanel').style.display  = 'none';
+  }
+}
+
+function renderFilePills() {
+  const container = document.getElementById('filePillsB');
+  const hint      = document.getElementById('dzBHint');
+  if (dataBFiles.length === 0) {
+    container.innerHTML = '';
+    hint.innerHTML = '📂 Click or drop up to 4 files<br><small>.xlsx · .xls · .csv</small>';
+    return;
+  }
+  const rem = MAX_B_FILES - dataBFiles.length;
+  hint.innerHTML = rem > 0 ? `📂 Drop ${rem} more file${rem>1?'s':''} to append` : `✅ ${MAX_B_FILES} files loaded`;
+  container.innerHTML = dataBFiles.map((f, i) => {
+    const c = FILE_COLORS[f.colorIdx];
+    return `<div class="file-pill">
+      <span class="pill-color" style="background:${c.hex};"></span>
+      <span class="pill-icon">📄</span>
+      <span class="pill-name" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="pill-rows">${f.rows.length} rows</span>
+      <span class="pill-del" onclick="removeFileB(${i})">✕</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCombinedPreview() {
+  if (!dataBFiles.length) return;
+  const totalRows = dataBFiles.reduce((s, f) => s + f.rows.length, 0);
+  document.getElementById('titleB').style.display = 'flex';
+  document.getElementById('metaB').textContent    = `${totalRows} rows across ${dataBFiles.length} file(s)`;
+  const cont = document.getElementById('prevB');
+  cont.style.display = 'block'; cont.classList.add('active');
+
+  const headers    = dataBFiles[0].headers.filter(h => h !== 'ORIG_SIZE_DATA');
+  const previewRows = [];
+  for (const f of dataBFiles) {
+    const origIdx = f.headers.indexOf('ORIG_SIZE_DATA');
+    for (const r of f.rows) {
+      const row = headers.map(h => {
+        const i = f.headers.indexOf(h);
+        return h === 'SIZE_DATA' && origIdx !== -1 ? r[origIdx] : (i !== -1 ? r[i] ?? '' : '');
+      });
+      previewRows.push({ row, colorIdx: f.colorIdx });
+      if (previewRows.length >= 5) break;
+    }
+    if (previewRows.length >= 5) break;
+  }
+  let html = `<table class="preview-table"><thead><tr><th>File</th>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>`;
+  previewRows.forEach(({ row, colorIdx }) => {
+    const c = FILE_COLORS[colorIdx];
+    html += `<tr><td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c.hex};"></span></td>${row.map(v=>`<td>${esc(String(v))}</td>`).join('')}</tr>`;
+  });
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+// ── File A ───────────────────────────────────────────────────────────────────
+async function fetchFileAData() {
+  const btn = document.getElementById('fetchAButton');
+  const ldr = document.getElementById('loadingA');
+  btn.style.display = 'none'; ldr.style.display = 'block';
+  try {
+    const res  = await fetch(`${BACKEND_URL}/get_file_a_data?t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) { toast(`Error: ${data.error}`, 'err'); return; }
+    dataA = { name: data.name, headers: data.headers, rows: data.rows };
+    renderSlotA(); renderPreviewA();
+    toast(`Loaded File A from DB (${data.rows.length} rows)`, 'ok');
+    if (dataA && dataBFiles.length > 0) showKeyPanel();
+  } catch(err) { toast(`Error: ${err.message}`, 'err'); }
+  finally { btn.style.display = 'block'; ldr.style.display = 'none'; }
+}
+
+function renderSlotA() {
+  document.getElementById('dzA').innerHTML = `<div class="file-pill" style="justify-content:flex-start;">
+    <span class="pill-icon">🗄️</span>
+    <span class="pill-name">${esc(dataA.name)}</span>
+    <span class="pill-rows">${dataA.rows.length} rows</span>
+    <span class="pill-del" onclick="clearSlotA()">✕</span>
+  </div>`;
+}
+
+function renderPreviewA() {
+  document.getElementById('metaA').textContent = `${dataA.rows.length} rows`;
+  document.getElementById('titleA').style.display = 'flex';
+  const cont = document.getElementById('prevA');
+  cont.style.display = 'block'; cont.classList.add('active');
+  let html = `<table class="preview-table"><thead><tr>${dataA.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>`;
+  dataA.rows.slice(0, 5).forEach(r => html += `<tr>${dataA.headers.map((_,i)=>`<td>${esc(r[i]??'')}</td>`).join('')}</tr>`);
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+function clearSlotA() {
+  dataA = null;
+  document.getElementById('dzA').innerHTML = `<button class="btn btn-primary" onclick="fetchFileAData()" id="fetchAButton">Load Data from DB</button><p id="loadingA" style="display:none;">Loading...</p>`;
+  document.getElementById('prevA').style.display = 'none';
+  document.getElementById('titleA').style.display = 'none';
+  document.getElementById('keyInfoPanel').style.display = 'none';
+  document.getElementById('resultsPanel').style.display = 'none';
+}
+
+function showKeyPanel() {
+  document.getElementById('keyInfoPanel').style.display = 'block';
+  document.getElementById('resultsPanel').style.display = 'flex';
+  document.getElementById('emptyMsg').style.display     = 'flex';
+  document.getElementById('resultsInner').style.display = 'none';
+}
+
+// ── Core comparison ──────────────────────────────────────────────────────────
+function runComparison() {
+  if (!dataA)              { toast('Load DB data first', 'err'); return; }
+  if (!dataBFiles.length)  { toast('Upload at least one PPS file', 'err'); return; }
+
+  // Validate required DB columns
+  const missingA = KEY_PAIRS.filter(kp => dataA.headers.indexOf(kp.a) === -1).map(kp => kp.a);
+  if (missingA.length) { toast(`Missing DB columns: ${missingA.join(', ')}`, 'err'); return; }
+
+  const finalFobIdx = dataA.headers.findIndex(h => /^final\s*fob$/i.test(h));
+  const extSzFobIdx = dataA.headers.findIndex(h => /^extszfob$/i.test(h));
+  const cbdidIdx    = dataA.headers.findIndex(h => /^cbdid$/i.test(h));
+  if (finalFobIdx === -1) { toast('Missing "FinalFOB" in DB', 'err'); return; }
+  if (extSzFobIdx === -1) { toast('Missing "ExtSzFOB" in DB', 'err'); return; }
+  if (cbdidIdx    === -1) { toast('Missing "CBDID" in DB', 'err'); return; }
+
+  const sizeAIdx = dataA.headers.indexOf('EXTRACTED_SIZE');
+
+  // ── Build DB index (primary: with color, fallback: without color) ────────────
+  // Primary key:  season|style|color|factory
+  // Fallback key: season|style|factory  (used when File B COLOR is blank)
+  const indexA = new Map();
+  const indexANoColor = new Map();
+  dataA.rows.forEach((row, idx) => {
+    const key = JOIN_KEY_PAIRS
+      .map(kp => normalizeJoinKey(row[dataA.headers.indexOf(kp.a)], kp.a))
+      .join('|');
+    if (!indexA.has(key)) indexA.set(key, []);
+    indexA.get(key).push({ row, idx });
+
+    // Secondary index ignoring color — catches File B rows where COLOR is blank
+    const keyNoColor = JOIN_KEY_PAIRS
+      .filter(kp => kp.a !== 'ColorwayCode')
+      .map(kp => normalizeJoinKey(row[dataA.headers.indexOf(kp.a)], kp.a))
+      .join('|');
+    if (!indexANoColor.has(keyNoColor)) indexANoColor.set(keyNoColor, []);
+    indexANoColor.get(keyNoColor).push({ row, idx });
+  });
+
+  compRows = [];
+  let globalRow = 0;
+
+  dataBFiles.forEach(fileB => {
+    const bHdr         = fileB.headers;
+    const localQuoteIdx = bHdr.indexOf('LOCAL_QUOTE_AMOUNT');
+    const origSizeIdx   = bHdr.indexOf('ORIG_SIZE_DATA');
+    const sizeDataIdx   = bHdr.indexOf('SIZE_DATA');
+    if (localQuoteIdx === -1) { toast(`"${fileB.name}" missing LOCAL_QUOTE_AMOUNT`, 'err'); return; }
+
+    fileB.rows.forEach(rowB => {
+      globalRow++;
+
+      const bRawSize       = sizeDataIdx !== -1 ? String(rowB[sizeDataIdx]??'').trim() : '';
+      const bConvertedSize = bRawSize || 'ALL_REG_SIZE_RB';
+
+      // ── Build File B lookup key using the SAME normalizeJoinKey function ──
+      // This guarantees DB index keys and File B lookup keys are always in the
+      // same format — which was the root cause of "DB has key: NO" false negatives.
+      const joinKeyStr = JOIN_KEY_PAIRS
+        .map(kp => {
+          const idx = bHdr.indexOf(kp.b);
+          // Use kp.a (DB column name) so the same normalization rule applies
+          // (e.g. ColorwayCode empty→all_solid applies to both sides)
+          return normalizeJoinKey(idx !== -1 ? rowB[idx] : '', kp.a);
+        })
+        .join('|');
+
+      // Primary lookup: full key including color
+      let candidates = indexA.get(joinKeyStr) || [];
+      let usedFallback = false;
+
+      // Fallback: if File B COLOR is blank (normalizes to all_solid) and primary
+      // lookup finds nothing, retry without color so we can still match DB rows
+      // that have a real color value (e.g. 010, 065).
+      if (!candidates.length) {
+        const colorNorm = JOIN_KEY_PAIRS
+          .find(kp => kp.a === 'ColorwayCode') ?
+          normalizeJoinKey(
+            (() => { const ci = bHdr.indexOf('COLOR'); return ci !== -1 ? rowB[ci] : ''; })(),
+            'ColorwayCode'
+          ) : '';
+        if (colorNorm === 'all_solid') {
+          const keyNoColor = JOIN_KEY_PAIRS
+            .filter(kp => kp.a !== 'ColorwayCode')
+            .map(kp => { const i = bHdr.indexOf(kp.b); return normalizeJoinKey(i !== -1 ? rowB[i] : '', kp.a); })
+            .join('|');
+          candidates = indexANoColor.get(keyNoColor) || [];
+          usedFallback = candidates.length > 0;
+        }
+      }
+
+      const matchA     = matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx);
+      const rowA       = matchA ? matchA.row : null;
+      const localQuoteVal = String(rowB[localQuoteIdx]??'').trim();
+
+      // Helper: display value for a key column (shows original, human-readable)
+      function bDisplayVal(kp) {
+        if (kp.a === 'EXTRACTED_SIZE') {
+          return origSizeIdx !== -1 ? String(rowB[origSizeIdx]??'').trim() : bRawSize;
+        }
+        const i = bHdr.indexOf(kp.b);
+        const v = i !== -1 ? String(rowB[i]??'').trim() : '';
+        // Show ALL_SOLID when color is blank (for display only, not for key logic)
+        if (kp.b === 'COLOR' && v === '') return 'ALL_SOLID';
+        return v;
+      }
+
+      if (rowA) {
+        const keyDisplay = KEY_PAIRS.map(kp => {
+          const aVal = String(rowA[dataA.headers.indexOf(kp.a)]??'').trim();
+          const bVal = bDisplayVal(kp);
+          let match  = normalizeJoinKey(aVal, kp.a) === normalizeJoinKey(bVal, kp.a);
+          if (kp.a === 'EXTRACTED_SIZE') {
+            const parts = aVal.toLowerCase().split(/[_\-]+/);
+            match = parts.includes(bVal.toLowerCase())
+              || aVal.toLowerCase() === convertBSize(bVal).toLowerCase()
+              || aVal.toLowerCase().includes(bVal.toLowerCase());
+          }
+          return { aVal, bVal, match, aName: kp.a };
+        });
+
+        const rawDbSize  = extractSizeFromCBDID(String(rowA[cbdidIdx]??'').trim());
+        const dbCbdidSize = convertBExtendSize(rawDbSize);
+
+        let fobSource, dbFobValue;
+        if (bConvertedSize.toLowerCase() === dbCbdidSize.toLowerCase()) {
+          fobSource = 'FinalFOB'; dbFobValue = String(rowA[finalFobIdx]??'').trim();
+        } else {
+          fobSource = 'ExtSzFOB'; dbFobValue = String(rowA[extSzFobIdx]??'').trim();
+        }
+
+        const numL = parseFloat(localQuoteVal), numF = parseFloat(dbFobValue);
+        const valueMatch = !isNaN(numL) && !isNaN(numF)
+          ? Math.abs(numL - numF) < 0.0001
+          : localQuoteVal.toLowerCase() === dbFobValue.toLowerCase();
+
+        compRows.push({
+          rowIdx: globalRow, srcFile: fileB.name, srcColorIdx: fileB.colorIdx,
+          keys: keyDisplay, bSize: bConvertedSize, dbCbdidSize,
+          fobSource, dbFobValue, localQuoteVal, valueMatch, status: 'matched',
+          joinKeyStr
+        });
+      } else {
+        const keyDisplay = KEY_PAIRS.map(kp => ({
+          aVal: '', bVal: bDisplayVal(kp), match: false, aName: kp.a
+        }));
+        // Find what colors the DB actually has for this season+style+factory
+        // so the user can see the mismatch clearly in the result column
+        const keyNoColorForDiag = JOIN_KEY_PAIRS
+          .filter(kp => kp.a !== 'ColorwayCode')
+          .map(kp => { const i = bHdr.indexOf(kp.b); return normalizeJoinKey(i !== -1 ? rowB[i] : '', kp.a); })
+          .join('|');
+        const dbColorsForKey = (indexANoColor.get(keyNoColorForDiag) || [])
+          .map(c => String(c.row[dataA.headers.indexOf('ColorwayCode')] ?? '').trim() || '(empty)')
+          .filter((v, i, a) => a.indexOf(v) === i) // unique
+          .slice(0, 6);
+
+        compRows.push({
+          rowIdx: globalRow, srcFile: fileB.name, srcColorIdx: fileB.colorIdx,
+          keys: keyDisplay, bSize: bConvertedSize, dbCbdidSize: '',
+          fobSource: 'N/A', dbFobValue: '', localQuoteVal,
+          valueMatch: false, status: 'noKeyMatch',
+          joinKeyStr, dbHasKey: indexA.has(joinKeyStr),
+          dbColorsForKey
+        });
+      }
+    });
+  });
+
+  populateDropdowns();
+  renderTable();
+  document.getElementById('emptyMsg').style.display     = 'none';
+  document.getElementById('resultsInner').style.display = 'flex';
+
+  const mc = compRows.filter(r => r.valueMatch).length;
+  const dc = compRows.filter(r => r.status === 'matched' && !r.valueMatch).length;
+  const nc = compRows.filter(r => r.status === 'noKeyMatch').length;
+  toast(`Done — ${mc} match · ${dc} diff · ${nc} no key match`, 'ok');
+}
+
+function populateDropdowns() {
+  // Collect unique season and factory values from all compRows
+  const seasons   = [...new Set(compRows.map(r => r.keys.find(k => k.aName === 'Season')?.bVal || '').filter(Boolean))].sort();
+  const factories = [...new Set(compRows.map(r => r.keys.find(k => k.aName === 'FactoryCode')?.bVal || '').filter(Boolean))].sort();
+
+  const selSeason  = document.getElementById('filterSeason');
+  const selFactory = document.getElementById('filterFactory');
+  const prevSeason  = selSeason.value;
+  const prevFactory = selFactory.value;
+
+  selSeason.innerHTML  = '<option value="">All Seasons</option>'  + seasons.map(v   => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  selFactory.innerHTML = '<option value="">All Factories</option>' + factories.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+
+  // Restore previous selection if still valid
+  if (seasons.includes(prevSeason))     selSeason.value  = prevSeason;
+  if (factories.includes(prevFactory))  selFactory.value = prevFactory;
+}
+
+function renderTable() {
+  document.getElementById('rHead').innerHTML = `<tr>
+    <th class="hrow" rowspan="2">#</th>
+    <th class="hb"   rowspan="2">Source File</th>
+    <th class="ha"   colspan="5">🔑 Key Columns (File A ↔ File B)</th>
+    <th class="hlogic grp" colspan="2">Size Comparison</th>
+    <th class="hlogic grp" colspan="1">FOB Source</th>
+    <th class="ha grp"  colspan="1">DB Value</th>
+    <th class="hb grp"  colspan="1">File B Value</th>
+    <th class="hrow grp" colspan="1">Result</th>
+  </tr><tr>
+    <th class="ha">Season</th><th class="ha">Size</th><th class="ha">Style</th>
+    <th class="ha">Color</th><th class="ha">Factory</th>
+    <th class="hlogic grp">B Size (conv.)</th>
+    <th class="hlogic">DB CBDID Size</th>
+    <th class="hlogic grp">Used</th>
+    <th class="ha grp">FOB Value</th>
+    <th class="hb grp">LOCAL_QUOTE_AMT</th>
+    <th class="hrow grp">Match?</th>
+  </tr>`;
+
+  const q           = document.getElementById('searchBox').value.toLowerCase().trim();
+  const fSeason     = document.getElementById('filterSeason')?.value  || '';
+  const fFactory    = document.getElementById('filterFactory')?.value || '';
+  let rows = compRows;
+  if (filterMode === 'match') rows = rows.filter(r => r.valueMatch);
+  if (filterMode === 'diff')  rows = rows.filter(r => r.status === 'matched' && !r.valueMatch);
+  if (filterMode === 'nokey') rows = rows.filter(r => r.status === 'noKeyMatch');
+  if (fSeason)  rows = rows.filter(r => (r.keys.find(k => k.aName === 'Season')?.bVal    || '') === fSeason);
+  if (fFactory) rows = rows.filter(r => (r.keys.find(k => k.aName === 'FactoryCode')?.bVal || '') === fFactory);
+  if (q) rows = rows.filter(r =>
+    r.keys.some(k => k.aVal.toLowerCase().includes(q) || k.bVal.toLowerCase().includes(q))
+    || r.localQuoteVal.toLowerCase().includes(q)
+    || r.dbFobValue.toLowerCase().includes(q)
+    || r.srcFile.toLowerCase().includes(q)
+  );
+
+  document.getElementById('cntMatch').textContent = rows.filter(r => r.valueMatch).length;
+  document.getElementById('cntDiff').textContent  = rows.filter(r => r.status==='matched'&&!r.valueMatch).length;
+  document.getElementById('cntNoKey').textContent = rows.filter(r => r.status==='noKeyMatch').length;
+  document.getElementById('cntRows').textContent  = rows.length;
+
+  const tbody = document.getElementById('rBody');
+  tbody.innerHTML = rows.slice(0, 2000).map(row => {
+    const isMatch = row.valueMatch;
+    const isNoKey = row.status === 'noKeyMatch';
+    const fc = FILE_COLORS[row.srcColorIdx] || FILE_COLORS[0];
+
+    const srcCell = `<td><span class="src-badge" style="color:${fc.hex};background:${fc.bg};border-color:${fc.border};">
+      <span style="width:6px;height:6px;border-radius:50%;background:${fc.hex};display:inline-block;"></span>
+      ${esc(row.srcFile)}</span></td>`;
+
+    const keyCells = row.keys.map(k => {
+      const cls = isNoKey ? 'cell-key-miss' : (k.match ? 'cell-key-match' : 'cell-key-miss');
+      return `<td class="${cls}" title="A: ${esc(k.aVal)} | B: ${esc(k.bVal)}">${esc(k.bVal||'—')}</td>`;
+    }).join('');
+
+    const szMatch  = row.bSize.toLowerCase() === row.dbCbdidSize.toLowerCase();
+    const szCls    = szMatch ? 'cell-match' : 'cell-miss';
+    const bSzCell  = `<td class="grp ${isNoKey?'cell-empty':szCls}">${esc(row.bSize||'—')}</td>`;
+    const dbSzCell = `<td class="${isNoKey?'cell-empty':szCls}">${esc(row.dbCbdidSize||'—')}</td>`;
+
+    const fobTag = row.fobSource === 'FinalFOB' ? '<span class="fob-tag final">Final FOB</span>'
+      : row.fobSource === 'ExtSzFOB'            ? '<span class="fob-tag ext">ExtSzFOB</span>'
+      :                                            '<span class="fob-tag no-match">N/A</span>';
+
+    const dbCls  = isMatch ? 'cell-match' : (isNoKey ? 'cell-empty' : 'cell-miss');
+    const lqCls  = isMatch ? 'cell-match' : (isNoKey ? 'cell-empty' : 'cell-miss');
+
+    let resultHtml;
+    if (isNoKey) {
+      const dbColors = (row.dbColorsForKey && row.dbColorsForKey.length)
+        ? `<div style="margin-top:3px;">DB colors for this style: <span style="color:var(--a2)">${row.dbColorsForKey.map(esc).join(', ')}</span></div>`
+        : `<div style="margin-top:3px;color:var(--mismatch);">No DB record found for this season+style+factory</div>`;
+      resultHtml = `<span style="color:var(--only);">⚠ No Key Match</span>
+        <div style="margin-top:4px;color:var(--dim);font-size:.65rem;line-height:1.5;white-space:normal;max-width:280px;">
+          <div>Key used: <span style="color:var(--muted);">${esc(row.joinKeyStr||'')}</span></div>
+          ${dbColors}
+        </div>`;
+    } else if (isMatch) {
+      resultHtml = '<span class="badge-match"></span><span style="color:var(--match);">✓ Match</span>';
+    } else {
+      resultHtml = '<span class="badge-miss"></span><span style="color:var(--mismatch);">✗ Diff</span>';
+    }
+
+    return `<tr>
+      <td class="row-num">${row.rowIdx}</td>
+      ${srcCell}${keyCells}
+      ${bSzCell}${dbSzCell}
+      <td class="grp" style="text-align:center;">${fobTag}</td>
+      <td class="grp ${dbCls}">${esc(row.dbFobValue||'—')}</td>
+      <td class="grp ${lqCls}">${esc(row.localQuoteVal||'—')}</td>
+      <td class="grp">${resultHtml}</td>
+    </tr>`;
+  }).join('');
+
+  if (rows.length > 2000) {
+    tbody.innerHTML += `<tr><td colspan="99" style="text-align:center;color:var(--muted);padding:12px;font-size:.73rem;">
+      Showing 2,000 of ${rows.length} rows — export CSV for full data</td></tr>`;
+  }
+}
+
+function setFilter(mode, btn) {
+  filterMode = mode;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function exportCSV() {
+  if (!compRows.length) return;
+  const hdr = ['Row','Source_File','Season_B','Size_B','Style_B','Color_B','Factory_B',
+               'B_Size_Converted','DB_CBDID_Size','FOB_Source','DB_FOB_Value',
+               'LOCAL_QUOTE_AMOUNT','Match','Status'];
+  const lines = [hdr.map(cv).join(',')];
+  compRows.forEach(r => lines.push([
+    r.rowIdx, r.srcFile,
+    ...r.keys.map(k => k.bVal),
+    r.bSize, r.dbCbdidSize, r.fobSource, r.dbFobValue, r.localQuoteVal,
+    r.valueMatch ? 'YES' : 'NO', r.status
+  ].map(cv).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'local_quote_validation.csv';
+  a.click();
+  toast('CSV exported', 'ok');
+}
+
+function cv(v){ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+let toastT;
+function toast(msg,type='ok'){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show '+type;
+  clearTimeout(toastT); toastT=setTimeout(()=>el.className='',3500);
+}
+</script>
+</body>
+</html>

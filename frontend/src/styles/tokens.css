@@ -1,0 +1,179 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Japanese Minimalism (Ma / 間) palette.
+   Light = "washi" warm paper · Dark = "sumi" warm near-black.
+   Muted naturals over saturated primaries; no gradients, no colored glows.
+   The dark theme follows the OS via prefers-color-scheme and can be forced
+   with [data-theme="light" | "dark"] on the root element.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light dark;
+
+  /* surfaces — warm washi paper */
+  --bg: #ece9e1;
+  --surface: #f4f2ea;
+  --surface-2: #e3dfd3;
+  --surface-3: #d9d4c6;
+
+  /* borders — hairline stone */
+  --border: #d4cfc2;
+  --border-2: #c3bdac;
+
+  /* file-source colors — muted naturals */
+  --a: #5e6678;          /* ACS — ai-nezumi indigo-grey */
+  --a-2: #4d5568;
+  --a-glow: transparent;
+
+  --b: #a5817a;          /* PPS — toki-iro clay */
+  --b-2: #8a5a51;
+  --b-glow: transparent;
+
+  --c: #79866a;          /* WISDOM / Costsheet — rikyū sage */
+  --c-2: #566448;
+  --c-glow: transparent;
+
+  /* status — earth tones */
+  --match: #5f7355;
+  --mismatch: #9e5a52;
+  --only: #8a6f37;
+
+  /* text color for filled accent surfaces (buttons) */
+  --on-accent: #f4f2ea;
+
+  /* text — warm ink */
+  --text: #26251f;
+  --muted: #7c776b;
+  --dim: #a8a294;
+
+  /* type */
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* radius */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  /* spacing — 4px base */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+}
+
+/* ── sumi: warm near-black dark theme ─────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #1a1917;
+    --surface: #221f1c;
+    --surface-2: #2a2723;
+    --surface-3: #332f2a;
+
+    --border: #38352f;
+    --border-2: #45413a;
+
+    --a: #8a93ac;
+    --a-2: #a3abbf;
+    --b: #c6a29a;
+    --b-2: #d4b5ae;
+    --c: #9ba687;
+    --c-2: #b0ba9e;
+
+    --match: #8ca07e;
+    --mismatch: #c08a82;
+    --only: #c7ac72;
+
+    --on-accent: #1a1917;
+
+    --text: #e7e3d9;
+    --muted: #9a948a;
+    --dim: #6c675e;
+  }
+}
+
+/* ── manual overrides win over the OS preference in both directions ───────── */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #ece9e1;
+  --surface: #f4f2ea;
+  --surface-2: #e3dfd3;
+  --surface-3: #d9d4c6;
+  --border: #d4cfc2;
+  --border-2: #c3bdac;
+  --a: #5e6678;  --a-2: #4d5568;
+  --b: #a5817a;  --b-2: #8a5a51;
+  --c: #79866a;  --c-2: #566448;
+  --match: #5f7355;
+  --mismatch: #9e5a52;
+  --only: #8a6f37;
+  --on-accent: #f4f2ea;
+  --text: #26251f;
+  --muted: #7c776b;
+  --dim: #a8a294;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #1a1917;
+  --surface: #221f1c;
+  --surface-2: #2a2723;
+  --surface-3: #332f2a;
+  --border: #38352f;
+  --border-2: #45413a;
+  --a: #8a93ac;  --a-2: #a3abbf;
+  --b: #c6a29a;  --b-2: #d4b5ae;
+  --c: #9ba687;  --c-2: #b0ba9e;
+  --match: #8ca07e;
+  --mismatch: #c08a82;
+  --only: #c7ac72;
+  --on-accent: #1a1917;
+  --text: #e7e3d9;
+  --muted: #9a948a;
+  --dim: #6c675e;
+}
+
+* ,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

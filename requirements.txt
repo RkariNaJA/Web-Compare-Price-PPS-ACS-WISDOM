@@ -1,0 +1,9 @@
+# Backend (sql_backend.py) Python dependencies.
+# Install with:  python -m pip install -r requirements.txt
+# Versions pinned to what the app was last verified against (2026-07-15).
+
+Flask==3.1.2
+flask-cors==6.0.5
+pyodbc==5.3.0
+ldap3==2.9.1
+python-dotenv==1.0.1

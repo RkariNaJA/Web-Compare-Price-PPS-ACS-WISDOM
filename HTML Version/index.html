@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPS vs DB — LOCAL_QUOTE_AMOUNT Validator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f18;--surface:#14172280;--surface2:#1e2236;--surface3:#252a42;
+  --border:#2a2f50;--border2:#363d66;
+  --a:#6c7fff;--a2:#a5aeff;--a-glow:rgba(108,127,255,.18);
+  --b:#ff7eb3;--b2:#ffb3d1;--b-glow:rgba(255,126,179,.18);
+  --c:#34d399;--c2:#6ee7b7;/* costsheet green */
+  --match:#4ade80;--mismatch:#f87171;--only:#facc15;
+  --text:#e8eaf6;--muted:#7880a8;--dim:#404878;
+  --mono:'JetBrains Mono',monospace;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
+header{padding:10px 24px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.logo{width:38px;height:38px;background:linear-gradient(135deg,var(--a),var(--b));border-radius:10px;display:grid;place-items:center;font-size:18px;flex-shrink:0;}
+header h1{font-size:1rem;font-weight:650;letter-spacing:-.015em;}
+header p{font-size:.76rem;color:var(--muted);margin-top:2px;}
+/* 3-column upload strip */
+.upload-strip{display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr;gap:0;border-bottom:1px solid var(--border);background:var(--surface);padding:10px 24px;align-items:start;flex-shrink:0;}
+.upload-strip .vs{display:flex;align-items:center;justify-content:center;height:100%;font-size:.7rem;font-weight:700;letter-spacing:.1em;color:var(--dim);}
+.file-slot{display:flex;flex-direction:column;gap:8px;}
+.file-slot.left{padding-right:12px;}
+.file-slot.mid{padding:0 12px;}
+.file-slot.right{padding-left:12px;}
+.slot-label{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;}
+.slot-label.la{color:var(--a2);}
+.slot-label.lb{color:var(--b2);}
+.slot-label.lc{color:var(--c2);}
+.dropzone{border:2px dashed var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;position:relative;transition:border-color .2s,background .2s;}
+.dropzone:hover,.dropzone.drag{background:rgba(255,255,255,.03);}
+.dropzone.la:hover,.dropzone.la.drag{border-color:var(--a);}
+.dropzone.lb:hover,.dropzone.lb.drag{border-color:var(--b);}
+.dropzone.lc:hover,.dropzone.lc.drag{border-color:var(--c);}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+.dropzone p{font-size:.78rem;color:var(--muted);line-height:1.5;}
+.file-pills{display:flex;flex-direction:column;gap:6px;}
+.file-pill{display:flex;align-items:center;gap:8px;background:var(--surface2);border-radius:8px;padding:8px 12px;border:1px solid var(--border);}
+.file-pill .pill-icon{font-size:1rem;flex-shrink:0;}
+.file-pill .pill-name{flex:1;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-pill .pill-rows{font-size:.65rem;color:var(--muted);font-family:var(--mono);flex-shrink:0;margin-right:4px;}
+.file-pill .pill-color{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.file-pill .pill-del{cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:4px;font-size:.8rem;transition:color .15s;flex-shrink:0;}
+.file-pill .pill-del:hover{color:var(--mismatch);}
+.preview-container{margin-top:6px;max-height:70px;overflow:auto;border:1px solid var(--border);border-radius:4px;background:rgba(20,23,34,0.6);display:none;}
+.preview-container.active{display:block;}
+.preview-table{width:100%;border-collapse:collapse;font-size:.6rem;font-family:var(--mono);}
+.preview-table th{position:sticky;top:0;background:var(--surface3);color:var(--muted);padding:4px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;}
+.preview-table td{padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03);color:var(--text);white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;}
+.preview-title{font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;justify-content:space-between;}
+#keyInfoPanel{border-bottom:1px solid var(--border);padding:14px 32px;background:var(--surface);flex-shrink:0;display:none;}
+#keyInfoPanel h2{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.key-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+.key-chip{display:flex;align-items:center;gap:6px;background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:7px;padding:6px 12px;font-size:.72rem;color:var(--only);}
+.key-chip .arrow{color:var(--dim);font-size:.65rem;}
+.key-chip .side-a{color:var(--a2);}
+.key-chip .side-b{color:var(--b2);}
+.key-chip .side-c{color:var(--c2);}
+.logic-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:.72rem;line-height:1.6;color:var(--muted);margin-bottom:12px;}
+.logic-box code{background:rgba(108,127,255,.12);color:var(--a2);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.68rem;}
+.logic-box .hl-match{color:var(--match);}
+.logic-box .hl-ext{color:var(--b2);}
+.logic-box .hl-c{color:var(--c2);}
+.map-actions{display:flex;gap:10px;}
+.btn{border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;padding:9px 18px;transition:opacity .15s;}
+.btn-primary{background:linear-gradient(135deg,var(--a),#8b7fff);color:#fff;box-shadow:0 4px 12px var(--a-glow);}
+.btn-primary:hover{opacity:.88;}
+.btn-ghost{background:var(--surface2);border:1px solid var(--border);color:var(--muted);}
+.btn-ghost:hover{color:var(--text);border-color:var(--border2);}
+#resultsPanel{flex:1;display:none;flex-direction:column;overflow:hidden;}
+.results-toolbar{display:flex;align-items:center;gap:12px;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0;}
+.stat-pill{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:.75rem;}
+.stat-pill .dot{width:8px;height:8px;border-radius:50%;}
+.stat-pill span{font-family:var(--mono);font-weight:600;}
+.filter-btns{display:flex;gap:6px;margin-left:auto;}
+.filter-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:5px 13px;font-size:.73rem;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+.filter-btn.active{border-color:var(--a);color:var(--a2);}
+.search-box{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;font-size:.78rem;font-family:'Inter',sans-serif;outline:none;width:180px;transition:border-color .15s;}
+.search-box:focus{border-color:var(--a);}
+.filter-select{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:.78rem;font-family:'Inter',sans-serif;outline:none;cursor:pointer;transition:border-color .15s;}
+.filter-select:focus,.filter-select:hover{border-color:var(--a);}
+.filter-select option{background:var(--surface2);color:var(--text);}
+.table-wrap{flex:1;overflow:auto;}
+.table-wrap::-webkit-scrollbar{width:6px;height:6px;}
+.table-wrap::-webkit-scrollbar-track{background:var(--bg);}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+table{border-collapse:collapse;font-size:.78rem;width:max-content;min-width:100%;}
+thead{position:sticky;top:0;z-index:10;}
+thead tr:first-child th{background:#0d0f18;padding:8px 20px 5px;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-bottom:none;white-space:nowrap;}
+thead tr:first-child th.ha{color:var(--a2);}
+thead tr:first-child th.hb{color:var(--b2);}
+thead tr:first-child th.hc{color:var(--c2);}
+thead tr:first-child th.hrow{color:var(--muted);}
+thead tr:first-child th.hlogic{color:var(--only);}
+thead tr:nth-child(2) th{background:#0d0f18;padding:5px 20px 11px;border-bottom:1px solid var(--border);color:var(--muted);font-size:.68rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;}
+tbody tr{border-bottom:1px solid rgba(42,47,80,.45);}
+tbody tr:hover{background:var(--surface2);}
+tbody td{padding:10px 20px;font-family:var(--mono);font-size:.76rem;white-space:nowrap;vertical-align:middle;}
+td.row-num{color:var(--dim);font-size:.68rem;text-align:right;padding-right:12px;width:44px;}
+.cell-match{background:rgba(74,222,128,.09);color:#86efac;}
+.cell-miss{background:rgba(248,113,113,.09);color:#fca5a5;}
+.cell-empty{color:var(--dim);font-style:italic;}
+.cell-key-match{background:rgba(74,222,128,0.15);color:#86efac;}
+.cell-key-miss{background:rgba(250,204,21,0.05);color:var(--only);}
+.cell-c{background:rgba(52,211,153,.07);color:var(--c2);}
+.badge-match{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--match);margin-right:4px;vertical-align:middle;}
+.badge-miss{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mismatch);margin-right:4px;vertical-align:middle;}
+td.grp,th.grp{border-left:2px solid var(--border2);}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);padding:48px;text-align:center;}
+.empty-state .icon{font-size:52px;opacity:.25;}
+.empty-state h3{font-size:1rem;font-weight:500;color:var(--text);}
+.empty-state p{font-size:.82rem;max-width:340px;line-height:1.6;}
+.fob-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:.62rem;font-weight:600;margin-right:4px;vertical-align:middle;}
+.fob-tag.final{background:rgba(74,222,128,.15);color:var(--match);}
+.fob-tag.ext{background:rgba(255,126,179,.15);color:var(--b2);}
+.fob-tag.no-match{background:rgba(248,113,113,.12);color:var(--mismatch);}
+.src-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:4px;font-size:.62rem;font-weight:600;border:1px solid;}
+#toast{position:fixed;bottom:22px;right:22px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 16px;font-size:.8rem;box-shadow:0 8px 32px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;z-index:999;}
+#toast.show{opacity:1;}
+#toast.ok{border-color:var(--match);color:var(--match);}
+#toast.err{border-color:var(--mismatch);color:var(--mismatch);}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚡</div>
+  <div>
+    <h1>LOCAL_QUOTE_AMOUNT Validator</h1>
+    <p>PPS (File B) vs ACS Database (File A) &amp; Costsheet (File C) — 3-way validation</p>
+  </div>
+</header>
+
+<!-- 3-column upload strip: A | VS | C | VS | B -->
+<div class="upload-strip">
+  <!-- File A -->
+  <div class="file-slot left">
+    <div class="slot-label la">File A — ACS Database</div>
+    <div class="dropzone la" id="dzA" style="cursor:default;">
+      <button class="btn btn-primary" onclick="fetchFileAData()" id="fetchAButton">Load ACS from DB</button>
+      <p id="loadingA" style="display:none;">Loading...</p>
+    </div>
+    <div class="preview-title" id="titleA" style="display:none;"><span>Preview File A</span><span id="metaA"></span></div>
+    <div class="preview-container" id="prevA"></div>
+  </div>
+  <div class="vs">VS</div>
+  <!-- File C (Costsheet) -->
+  <div class="file-slot mid">
+    <div class="slot-label lc">File C — Costsheet DB</div>
+    <div class="dropzone lc" id="dzC" style="cursor:default;">
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,var(--c),#059669);" onclick="fetchFileCData()" id="fetchCButton">Load Costsheet from DB</button>
+      <p id="loadingC" style="display:none;">Loading...</p>
+    </div>
+    <div class="preview-title" id="titleC" style="display:none;"><span>Preview File C</span><span id="metaC"></span></div>
+    <div class="preview-container" id="prevC"></div>
+  </div>
+  <div class="vs">VS</div>
+  <!-- File B (PPS) -->
+  <div class="file-slot right">
+    <div class="slot-label lb">File B — PPS Excel <span style="font-size:.6rem;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0;">(up to 4 files)</span></div>
+    <div class="dropzone lb" id="dzB">
+      <input type="file" id="inputB" accept=".xlsx,.xls,.csv" multiple>
+      <p id="dzBHint">📂 Click or drop up to 4 files<br><small>.xlsx · .xls · .csv</small></p>
+    </div>
+    <div class="file-pills" id="filePillsB"></div>
+    <div class="preview-title" id="titleB" style="display:none;"><span>Preview (all files combined)</span><span id="metaB"></span></div>
+    <div class="preview-container" id="prevB"></div>
+  </div>
+</div>
+
+<div id="keyInfoPanel">
+  <h2>
+    <span>Validation Configuration — Fixed Keys &amp; FOB Logic</span>
+    <span style="font-size:.6rem;color:var(--only);background:rgba(250,204,21,0.1);padding:2px 8px;border-radius:4px;font-weight:500;">
+      File B filtered to: SEASON_YEAR, STYLE, COLOR, FTYCODE, SIZE_DATA, LOCAL_QUOTE_AMOUNT
+    </span>
+  </h2>
+  <div class="key-grid">
+    <div class="key-chip">🔑 <span class="side-b">SEASON_YEAR</span></div>
+    <div class="key-chip">🔑 <span class="side-b">SIZE_DATA</span></div>
+    <div class="key-chip">🔑 <span class="side-b">STYLE</span></div>
+    <div class="key-chip">🔑 <span class="side-b">COLOR</span></div>
+    <div class="key-chip">🔑 <span class="side-b">FTYCODE</span></div>
+  </div>
+  <div class="logic-box">
+    <strong style="color:var(--text);">FOB Selection Logic (File A / ACS):</strong><br>
+    1. Convert File B <code>SIZE_DATA</code> → regular → <code>ALL_REG_SIZE_RB</code> · extended → <code>ALL_EXTEND_SIZE_RB</code><br>
+    2. Extract size from DB <code>CBDID</code> → normalize extended → <code>ALL_EXTEND_SIZE_RB</code><br>
+    3. If sizes match → compare <code>LOCAL_QUOTE_AMOUNT</code> vs <span class="hl-match">Final FOB</span> · else vs <span class="hl-ext">ExtSzFOB</span><br>
+    <strong style="color:var(--text);">File C (Costsheet) Logic:</strong><br>
+    4. Match on same 5 keys · if multiple records → pick <span class="hl-c">MAX(First Input Date)</span> · compare <code>LOCAL_QUOTE_AMOUNT</code> vs <span class="hl-c">Costsheet Final FOB</span>
+  </div>
+  <div class="map-actions">
+    <button class="btn btn-primary" onclick="runComparison()">▶ Validate LOCAL_QUOTE_AMOUNT</button>
+  </div>
+</div>
+
+<div id="resultsPanel">
+  <div class="empty-state" id="emptyMsg">
+    <div class="icon">🔍</div>
+    <h3>Ready to validate</h3>
+    <p>Load data from DB, optionally load Costsheet, upload PPS file(s), then click <strong>Validate</strong>.</p>
+  </div>
+  <div id="resultsInner" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+    <div class="results-toolbar">
+      <div class="stat-pill"><span class="dot" style="background:var(--match)"></span>Match <span id="cntMatch">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--mismatch)"></span>Diff <span id="cntDiff">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--only)"></span>No Key Match <span id="cntNoKey">0</span></div>
+      <div class="stat-pill"><span class="dot" style="background:var(--dim)"></span>Rows <span id="cntRows">0</span></div>
+      <div class="filter-btns">
+        <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+        <button class="filter-btn" onclick="setFilter('match',this)">Matches only</button>
+        <button class="filter-btn" onclick="setFilter('diff',this)">Differences only</button>
+        <button class="filter-btn" onclick="setFilter('nokey',this)">No Key Match</button>
+      </div>
+      <select class="filter-select" id="filterSeason" onchange="renderTable()" title="Filter by Season"><option value="">All Seasons</option></select>
+      <select class="filter-select" id="filterFactory" onchange="renderTable()" title="Filter by Factory"><option value="">All Factories</option></select>
+      <input class="search-box" type="text" placeholder="Search…" id="searchBox" oninput="renderTable()">
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:.75rem;" onclick="exportCSV()">⬇ CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table id="resultTable"><thead id="rHead"></thead><tbody id="rBody"></tbody></table>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let dataA      = null;   // ACS DB
+let dataC      = null;   // Costsheet DB
+let dataBFiles = [];     // PPS files (up to 4)
+let compRows   = [];
+let filterMode = 'all';
+
+const BACKEND_URL = 'http://localhost:5001';
+const MAX_B_FILES = 4;
+
+const FILE_COLORS = [
+  { hex: '#6c7fff', bg: 'rgba(108,127,255,.12)', border: 'rgba(108,127,255,.4)' },
+  { hex: '#ff7eb3', bg: 'rgba(255,126,179,.12)', border: 'rgba(255,126,179,.4)' },
+  { hex: '#4ade80', bg: 'rgba(74,222,128,.12)',  border: 'rgba(74,222,128,.4)'  },
+  { hex: '#facc15', bg: 'rgba(250,204,21,.12)',  border: 'rgba(250,204,21,.4)'  },
+];
+
+// ── Key mappings ──────────────────────────────────────────────────────────────
+// File A (ACS) column → File B column
+const KEY_PAIRS = [
+  { a: 'Season',         b: 'SEASON_YEAR' },
+  { a: 'EXTRACTED_SIZE', b: 'SIZE_DATA'   },
+  { a: 'StyleNumber',    b: 'STYLE'       },
+  { a: 'ColorwayCode',   b: 'COLOR'       },
+  { a: 'FactoryCode',    b: 'FTYCODE'     }
+];
+const JOIN_KEY_PAIRS = KEY_PAIRS.filter(kp => kp.a !== 'EXTRACTED_SIZE');
+
+// File C (Costsheet) column → File B column
+// The costsheet size column will be handled the same way as SIZE_DATA
+// `display` is the label shown in the preview header; matching is alias-based (see C_KEY_ALIASES)
+const C_KEY_MAP = {
+  season:  'Season',
+  style:   'Style No.',
+  color:   'Color',
+  factory: 'Factory',
+  size:    'Size',
+  fob:     'Final FOB',     // <-- column holding the FOB value to compare (MAX First Input Date)
+  date:    'First Input Date'
+};
+// Join keys for costsheet (exclude size)
+const C_JOIN_KEYS = ['season','style','color','factory'];
+
+// Tolerant aliases for costsheet header lookup (case/whitespace/punctuation-insensitive)
+const C_KEY_ALIASES = {
+  season:  ['season','seasonyear','seasoncode'],
+  style:   ['styleno','stylenumber','style','style#'],
+  color:   ['color','colour','colorway','colorwaycode'],
+  factory: ['factory','factorycode','fty','ftycode'],
+  size:    ['size','sizedata','sizecode'],
+  fob:     ['finalfob','final fob','finalfobprice','finalfobamount'],
+  date:    ['firstinputdate','inputdate','firstinput']
+};
+function normCColName(s) { return String(s ?? '').replace(/[\s_.\-]+/g,'').toLowerCase(); }
+function findCostsheetIdx(hdr, key) {
+  const wanted = new Set((C_KEY_ALIASES[key] || []).map(normCColName));
+  const want   = normCColName(C_KEY_MAP[key] || '');
+  if (want) wanted.add(want);
+  for (let i = 0; i < hdr.length; i++) {
+    if (wanted.has(normCColName(hdr[i]))) return i;
+  }
+  return -1;
+}
+
+const STRICT_B_COLS = ["SEASON_YEAR","STYLE","COLOR","FTYCODE","SIZE_DATA","LOCAL_QUOTE_AMOUNT"];
+
+const REG_SIZES = [
+  "0X","1X","2X","3X","4X","2XS","XS","S","M","L","XL","2XL",
+  "L/XL","S/M","S+","M+","L+","XL+","1SIZE",
+  "3-6","6-9","9-12","12-18","18-24","40","44","48","52","56",
+  "34R","36R","36+1","36+2","38R","38+1","38+2",
+  "40R","40+1","40+2","42R","42+1","42+2",
+  "44R","44+1","44+2","46R","46+1","46+2",
+  "34-1","36-1","38-1","40-1","42-1","44-1","46-1",
+  "44/4","46/4","48/4","50/4","52/4","54/4","56/4",
+  "44/6","46/4","48/6","50/6","52/6","54/6","56/6","58/6"
+];
+const EXTEND_SIZE = [
+  "4X","1X-T","2X-T","3X-T","3XL","4XL","5XL",
+  "S-T","M-T","L-T","L-TT","XL-T","2XL-T","3XL-T",
+  "4XL-T","5XL-T","MTT","LTT","XLTT","XL-TT",
+  "2XLTT","3XLTT","CUST1","CUST3","48","58","60",
+  "48R","48+1","48+2","48-1"
+];
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+function normalizeJoinKey(value, dbColName) {
+  let s = String(value ?? '').replace(/\s+/g, '').toLowerCase();
+  if ((dbColName === 'ColorwayCode' || dbColName === 'COLOR' ||
+       dbColName === 'color' || dbColName === 'Color') &&
+      (s === '' || s === 'all_htr' || s === 'all_aop' || s === 'retail' || s === 'solid1')) {
+    s = 'all_solid';
+  }
+  return s;
+}
+
+function convertBSize(size) {
+  const s = String(size).trim();
+  return REG_SIZES.includes(s) ? 'ALL_REG_SIZE_RB' : s;
+}
+
+function convertBExtendSize(size) {
+  const s = String(size).trim();
+  return EXTEND_SIZE.includes(s) ? 'ALL_EXTEND_SIZE_RB' : s;
+}
+
+function normalizeSizeToken(raw) {
+  // Applies both REG and EXTEND conversions in order
+  let s = convertBSize(String(raw).trim());
+  if (s !== 'ALL_REG_SIZE_RB') s = convertBExtendSize(s);
+  return s || 'ALL_REG_SIZE_RB';
+}
+
+function extractSizeFromCBDID(cbdid) {
+  const s = String(cbdid).trim();
+  if (!s) return '';
+  const parts = s.split('-');
+  if (parts.length < 6) return s;
+  return parts.slice(5).join('_');
+}
+
+function matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx) {
+  if (!candidates.length) return null;
+  const rawL  = bRawSize.trim().toLowerCase();
+  const convL = bConvertedSize.trim().toLowerCase();
+  let m = candidates.find(c => String(c.row[sizeAIdx]??'').trim().toLowerCase() === convL);
+  if (m) return m;
+  m = candidates.find(c => {
+    const parts = String(c.row[sizeAIdx]??'').trim().toLowerCase().split(/[_\-]+/);
+    return parts.includes(rawL) || parts.includes(convL);
+  });
+  if (m) return m;
+  m = candidates.find(c => {
+    const dbSz = String(c.row[sizeAIdx]??'').trim().toLowerCase();
+    return dbSz.includes(rawL) || dbSz.includes(convL);
+  });
+  if (m) return m;
+  if (convL !== 'all_reg_size_rb') {
+    m = candidates.find(c => !String(c.row[sizeAIdx]??'').trim().toLowerCase().includes('reg_size'));
+    if (m) return m;
+  }
+  return candidates[0] || null;
+}
+
+// Parse a date value from the costsheet (handles Date objects, strings, Excel serials)
+function parseDate(val) {
+  if (!val || val === '') return null;
+  // Excel serial number
+  if (typeof val === 'number') {
+    // Excel date serial: days since 1900-01-01 (with leap-year bug correction)
+    const d = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(d) ? null : d;
+  }
+  const d = new Date(String(val));
+  return isNaN(d) ? null : d;
+}
+
+// ── File B multi-drop setup ───────────────────────────────────────────────────
+function setupDropB() {
+  const dz  = document.getElementById('dzB');
+  const inp = document.getElementById('inputB');
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', ()  => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    handleFilesB(Array.from(e.dataTransfer.files));
+  });
+  inp.addEventListener('change', () => { handleFilesB(Array.from(inp.files)); inp.value = ''; });
+}
+setupDropB();
+
+function handleFilesB(files) {
+  const remaining = MAX_B_FILES - dataBFiles.length;
+  if (remaining <= 0) { toast(`Maximum ${MAX_B_FILES} files already loaded`, 'err'); return; }
+  if (files.length > remaining) toast(`Only ${remaining} more file(s) accepted (max ${MAX_B_FILES})`, 'err');
+  files.slice(0, remaining).forEach(f => loadFileB(f));
+}
+
+function loadFileB(file) {
+  if (!file) return;
+  if (dataBFiles.find(f => f.name === file.name)) { toast(`"${file.name}" already loaded`, 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb  = XLSX.read(e.target.result, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!raw.length) return;
+      let headers = raw[0].map(h => String(h).trim());
+      let rows    = raw.slice(1).filter(r => r.some(c => c !== ''));
+      const keptIdx = [], keptHdr = [];
+      headers.forEach((h, i) => { if (STRICT_B_COLS.includes(h)) { keptIdx.push(i); keptHdr.push(h); } });
+      headers = keptHdr;
+      rows    = rows.map(r => keptIdx.map(i => r[i]));
+      const sizeIdx = headers.indexOf('SIZE_DATA');
+      if (sizeIdx !== -1) {
+        headers.push('ORIG_SIZE_DATA');
+        rows.forEach(r => {
+          const orig = String(r[sizeIdx]).trim();
+          r.push(orig);
+          r[sizeIdx] = normalizeSizeToken(orig);
+        });
+      }
+      dataBFiles.push({ name: file.name, headers, rows, colorIdx: dataBFiles.length });
+      renderFilePills(); renderCombinedPreview();
+      toast(`Loaded "${file.name}" (${rows.length} rows)`, 'ok');
+      checkShowKeyPanel();
+    } catch(err) { console.error(err); toast('Error reading: ' + file.name, 'err'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function removeFileB(idx) {
+  dataBFiles.splice(idx, 1);
+  dataBFiles.forEach((f, i) => f.colorIdx = i);
+  renderFilePills(); renderCombinedPreview();
+  if (dataBFiles.length === 0) {
+    document.getElementById('titleB').style.display = 'none';
+    document.getElementById('prevB').style.display  = 'none';
+    document.getElementById('keyInfoPanel').style.display = 'none';
+    document.getElementById('resultsPanel').style.display = 'none';
+  }
+}
+
+function renderFilePills() {
+  const container = document.getElementById('filePillsB');
+  const hint      = document.getElementById('dzBHint');
+  if (!dataBFiles.length) {
+    container.innerHTML = '';
+    hint.innerHTML = '📂 Click or drop up to 4 files<br><small>.xlsx · .xls · .csv</small>';
+    return;
+  }
+  const rem = MAX_B_FILES - dataBFiles.length;
+  hint.innerHTML = rem > 0 ? `📂 Drop ${rem} more file${rem>1?'s':''} to append` : `✅ ${MAX_B_FILES} files loaded`;
+  container.innerHTML = dataBFiles.map((f, i) => {
+    const c = FILE_COLORS[f.colorIdx];
+    return `<div class="file-pill">
+      <span class="pill-color" style="background:${c.hex};"></span>
+      <span class="pill-icon">📄</span>
+      <span class="pill-name" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="pill-rows">${f.rows.length} rows</span>
+      <span class="pill-del" onclick="removeFileB(${i})">✕</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCombinedPreview() {
+  if (!dataBFiles.length) return;
+  const totalRows = dataBFiles.reduce((s, f) => s + f.rows.length, 0);
+  document.getElementById('titleB').style.display = 'flex';
+  document.getElementById('metaB').textContent    = `${totalRows} rows across ${dataBFiles.length} file(s)`;
+  const cont = document.getElementById('prevB');
+  cont.style.display = 'block'; cont.classList.add('active');
+  const headers = dataBFiles[0].headers.filter(h => h !== 'ORIG_SIZE_DATA');
+  const previewRows = [];
+  for (const f of dataBFiles) {
+    const origIdx = f.headers.indexOf('ORIG_SIZE_DATA');
+    for (const r of f.rows) {
+      const row = headers.map(h => {
+        const i = f.headers.indexOf(h);
+        return h === 'SIZE_DATA' && origIdx !== -1 ? r[origIdx] : (i !== -1 ? r[i] ?? '' : '');
+      });
+      previewRows.push({ row, colorIdx: f.colorIdx });
+      if (previewRows.length >= 5) break;
+    }
+    if (previewRows.length >= 5) break;
+  }
+  let html = `<table class="preview-table"><thead><tr><th>File</th>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>`;
+  previewRows.forEach(({ row, colorIdx }) => {
+    const c = FILE_COLORS[colorIdx];
+    html += `<tr><td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c.hex};"></span></td>${row.map(v=>`<td>${esc(String(v))}</td>`).join('')}</tr>`;
+  });
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+// ── File A (ACS) ─────────────────────────────────────────────────────────────
+async function fetchFileAData() {
+  const btn = document.getElementById('fetchAButton');
+  const ldr = document.getElementById('loadingA');
+  btn.style.display = 'none'; ldr.style.display = 'block';
+  try {
+    const res  = await fetch(`${BACKEND_URL}/get_file_a_data?t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) { toast(`Error: ${data.error}`, 'err'); return; }
+    dataA = { name: data.name, headers: data.headers, rows: data.rows };
+    renderSlotA(); renderPreviewA();
+    toast(`Loaded ACS from DB (${data.rows.length} rows)`, 'ok');
+    checkShowKeyPanel();
+  } catch(err) { toast(`Error: ${err.message}`, 'err'); }
+  finally { btn.style.display = 'block'; ldr.style.display = 'none'; }
+}
+
+function renderSlotA() {
+  document.getElementById('dzA').innerHTML = `<div class="file-pill" style="justify-content:flex-start;">
+    <span class="pill-icon">🗄️</span>
+    <span class="pill-name">${esc(dataA.name)}</span>
+    <span class="pill-rows">${dataA.rows.length} rows</span>
+    <span class="pill-del" onclick="clearSlotA()">✕</span>
+  </div>`;
+}
+function renderPreviewA() {
+  document.getElementById('metaA').textContent = `${dataA.rows.length} rows`;
+  document.getElementById('titleA').style.display = 'flex';
+  const cont = document.getElementById('prevA');
+  cont.style.display = 'block'; cont.classList.add('active');
+  // Show only the key columns used for matching
+  const keyCols = ['Season','StyleNumber','ColorwayCode','FactoryCode','EXTRACTED_SIZE','FinalFOB','ExtSzFOB'];
+  const keyIdxs = keyCols.map(k => ({ name: k, idx: dataA.headers.indexOf(k) })).filter(k => k.idx !== -1);
+  let html = `<table class="preview-table"><thead><tr>${keyIdxs.map(k=>`<th>${esc(k.name)}</th>`).join('')}</tr></thead><tbody>`;
+  dataA.rows.slice(0,5).forEach(r => html += `<tr>${keyIdxs.map(k=>`<td>${esc(r[k.idx]??'')}</td>`).join('')}</tr>`);
+  cont.innerHTML = html + '</tbody></table>';
+}
+function clearSlotA() {
+  dataA = null;
+  document.getElementById('dzA').innerHTML = `<button class="btn btn-primary" onclick="fetchFileAData()" id="fetchAButton">Load ACS from DB</button><p id="loadingA" style="display:none;">Loading...</p>`;
+  document.getElementById('prevA').style.display = 'none';
+  document.getElementById('titleA').style.display = 'none';
+  document.getElementById('keyInfoPanel').style.display = 'none';
+  document.getElementById('resultsPanel').style.display = 'none';
+}
+
+// ── File C (Costsheet) ────────────────────────────────────────────────────────
+async function fetchFileCData() {
+  const btn = document.getElementById('fetchCButton');
+  const ldr = document.getElementById('loadingC');
+  btn.style.display = 'none'; ldr.style.display = 'block';
+  try {
+    const res  = await fetch(`${BACKEND_URL}/get_costsheet_data?t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) { toast(`Error: ${data.error}`, 'err'); return; }
+    dataC = { name: data.name, headers: data.headers, rows: data.rows };
+    renderSlotC(); renderPreviewC();
+    toast(`Loaded Costsheet from DB (${data.rows.length} rows)`, 'ok');
+    checkShowKeyPanel();
+  } catch(err) { toast(`Error: ${err.message}`, 'err'); }
+  finally { btn.style.display = 'block'; ldr.style.display = 'none'; }
+}
+
+function renderSlotC() {
+  document.getElementById('dzC').innerHTML = `<div class="file-pill" style="justify-content:flex-start;">
+    <span class="pill-icon">📊</span>
+    <span class="pill-name">${esc(dataC.name)}</span>
+    <span class="pill-rows">${dataC.rows.length} rows</span>
+    <span class="pill-del" onclick="clearSlotC()">✕</span>
+  </div>`;
+}
+function renderPreviewC() {
+  document.getElementById('metaC').textContent = `${dataC.rows.length} rows`;
+  document.getElementById('titleC').style.display = 'flex';
+  const cont = document.getElementById('prevC');
+  cont.style.display = 'block'; cont.classList.add('active');
+  // Show only the key columns used for matching + FOB + date (tolerant lookup)
+  const keyDefs = [
+    { name: C_KEY_MAP.season,  key: 'season'  },
+    { name: C_KEY_MAP.style,   key: 'style'   },
+    { name: C_KEY_MAP.color,   key: 'color'   },
+    { name: C_KEY_MAP.factory, key: 'factory' },
+    { name: C_KEY_MAP.size,    key: 'size'    },
+    { name: C_KEY_MAP.fob,     key: 'fob'     },
+    { name: C_KEY_MAP.date,    key: 'date'    },
+  ];
+  const keyIdxs = keyDefs
+    .map(d => ({ name: dataC.headers[findCostsheetIdx(dataC.headers, d.key)] || d.name,
+                 idx:  findCostsheetIdx(dataC.headers, d.key) }))
+    .filter(k => k.idx !== -1);
+  let html = `<table class="preview-table"><thead><tr>${keyIdxs.map(k=>`<th>${esc(k.name)}</th>`).join('')}</tr></thead><tbody>`;
+  dataC.rows.slice(0,5).forEach(r => html += `<tr>${keyIdxs.map(k=>`<td>${esc(r[k.idx]??'')}</td>`).join('')}</tr>`);
+  cont.innerHTML = html + '</tbody></table>';
+}
+function clearSlotC() {
+  dataC = null;
+  document.getElementById('dzC').innerHTML = `<button class="btn btn-primary" style="background:linear-gradient(135deg,var(--c),#059669);" onclick="fetchFileCData()" id="fetchCButton">Load Costsheet from DB</button><p id="loadingC" style="display:none;">Loading...</p>`;
+  document.getElementById('prevC').style.display = 'none';
+  document.getElementById('titleC').style.display = 'none';
+}
+
+function checkShowKeyPanel() {
+  if (dataA && dataBFiles.length > 0) {
+    document.getElementById('keyInfoPanel').style.display = 'block';
+    document.getElementById('resultsPanel').style.display = 'flex';
+    document.getElementById('emptyMsg').style.display     = 'flex';
+    document.getElementById('resultsInner').style.display = 'none';
+  }
+}
+
+// ── Build Costsheet index ─────────────────────────────────────────────────────
+// Returns Map: joinKey → best row (max First Input Date after size match)
+function buildCostsheetIndex(dc) {
+  if (!dc) return null;
+  const hdr = dc.headers;
+  const seasonIdx  = findCostsheetIdx(hdr, 'season');
+  const styleIdx   = findCostsheetIdx(hdr, 'style');
+  const colorIdx   = findCostsheetIdx(hdr, 'color');
+  const factoryIdx = findCostsheetIdx(hdr, 'factory');
+  const sizeIdx    = findCostsheetIdx(hdr, 'size');
+  const fobIdx     = findCostsheetIdx(hdr, 'fob');
+  const dateIdx    = findCostsheetIdx(hdr, 'date');
+
+  const missing = [];
+  if (fobIdx    === -1) missing.push(`FOB ("${C_KEY_MAP.fob}")`);
+  if (dateIdx   === -1) missing.push(`Date ("${C_KEY_MAP.date}")`);
+  if (seasonIdx === -1) missing.push('Season');
+  if (styleIdx  === -1) missing.push('Style');
+  if (factoryIdx=== -1) missing.push('Factory');
+  if (missing.length) {
+    toast(`Costsheet missing columns: ${missing.join(', ')}. Headers: ${hdr.slice(0,12).join(', ')}${hdr.length>12?'…':''}`, 'err');
+    console.warn('[Costsheet] missing columns:', missing, 'actual headers:', hdr);
+  }
+
+  // Store raw candidates grouped by non-size join key
+  // Key: season|style|color|factory
+  // Value: [{row, sizeNorm, date, fob}]
+  const rawIndex = new Map();
+  const rawIndexNoColor = new Map();
+
+  dc.rows.forEach(row => {
+    let szRaw = sizeIdx !== -1 ? String(row[sizeIdx]??'').trim() : '';
+    // Costsheet stores group sizes without the _RB suffix — align with PPS/ACS convention
+    const szUp = szRaw.toUpperCase();
+    if (szUp === 'ALL_REG_SIZE')    szRaw = 'ALL_REG_SIZE_RB';
+    if (szUp === 'ALL_EXTEND_SIZE') szRaw = 'ALL_EXTEND_SIZE_RB';
+    const szNorm = normalizeSizeToken(szRaw);
+    const dateVal = dateIdx !== -1 ? parseDate(row[dateIdx]) : null;
+    const fobVal  = fobIdx  !== -1 ? String(row[fobIdx]??'').trim() : '';
+
+    const entry = { row, szNorm, szRaw, dateVal, fobVal };
+
+    const key = [
+      normalizeJoinKey(seasonIdx  !== -1 ? row[seasonIdx]  : '', 'Season'),
+      normalizeJoinKey(styleIdx   !== -1 ? row[styleIdx]   : '', 'StyleNumber'),
+      normalizeJoinKey(colorIdx   !== -1 ? row[colorIdx]   : '', 'color'),
+      normalizeJoinKey(factoryIdx !== -1 ? row[factoryIdx] : '', 'FactoryCode'),
+    ].join('|');
+
+    if (!rawIndex.has(key)) rawIndex.set(key, []);
+    rawIndex.get(key).push(entry);
+
+    const keyNoColor = [
+      normalizeJoinKey(seasonIdx  !== -1 ? row[seasonIdx]  : '', 'Season'),
+      normalizeJoinKey(styleIdx   !== -1 ? row[styleIdx]   : '', 'StyleNumber'),
+      normalizeJoinKey(factoryIdx !== -1 ? row[factoryIdx] : '', 'FactoryCode'),
+    ].join('|');
+    if (!rawIndexNoColor.has(keyNoColor)) rawIndexNoColor.set(keyNoColor, []);
+    rawIndexNoColor.get(keyNoColor).push(entry);
+  });
+
+  return { rawIndex, rawIndexNoColor, fobIdx, dateIdx };
+}
+
+// Find the best costsheet record for a given File B row
+// Returns { fobVal, dateStr, matched: true/false }
+function lookupCostsheet(cIdx, bConvertedSize, joinKeyStr, keyNoColor) {
+  if (!cIdx) return null;
+
+  let candidates = cIdx.rawIndex.get(joinKeyStr) || [];
+
+  // Fallback: no-color if nothing found with color
+  if (!candidates.length) {
+    candidates = cIdx.rawIndexNoColor.get(keyNoColor) || [];
+  }
+
+  if (!candidates.length) return { fobVal: '', dateStr: '', sizeRaw: '', sizeNorm: '', matched: false };
+
+  // Filter to matching size
+  const convL = bConvertedSize.toLowerCase();
+  let sized = candidates.filter(c => c.szNorm.toLowerCase() === convL);
+  if (!sized.length) {
+    // Fallback: partial size match
+    sized = candidates.filter(c => {
+      const parts = c.szNorm.toLowerCase().split(/[_\-]+/);
+      return parts.some(p => p === convL) || c.szNorm.toLowerCase().includes(convL);
+    });
+  }
+  if (!sized.length) sized = candidates; // last resort: any size
+
+  // Pick the record with the MAX First Input Date
+  const best = sized.reduce((prev, cur) => {
+    if (!prev) return cur;
+    if (!cur.dateVal) return prev;
+    if (!prev.dateVal) return cur;
+    return cur.dateVal > prev.dateVal ? cur : prev;
+  }, null);
+
+  if (!best) return { fobVal: '', dateStr: '', sizeRaw: '', sizeNorm: '', matched: false };
+
+  const dateStr = best.dateVal
+    ? best.dateVal.toISOString().slice(0, 10)
+    : String(best.row[cIdx.dateIdx] ?? '');
+
+  return { fobVal: best.fobVal, dateStr, sizeRaw: best.szRaw || '', sizeNorm: best.szNorm || '', matched: true };
+}
+
+// ── Core comparison ───────────────────────────────────────────────────────────
+function runComparison() {
+  if (!dataA)             { toast('Load ACS DB data first', 'err'); return; }
+  if (!dataBFiles.length) { toast('Upload at least one PPS file', 'err'); return; }
+
+  const missingA = KEY_PAIRS.filter(kp => dataA.headers.indexOf(kp.a) === -1).map(kp => kp.a);
+  if (missingA.length) { toast(`Missing ACS columns: ${missingA.join(', ')}`, 'err'); return; }
+
+  const finalFobIdx = dataA.headers.findIndex(h => /^final\s*fob$/i.test(h));
+  const extSzFobIdx = dataA.headers.findIndex(h => /^extszfob$/i.test(h));
+  const cbdidIdx    = dataA.headers.findIndex(h => /^cbdid$/i.test(h));
+  if (finalFobIdx === -1) { toast('Missing "FinalFOB" in ACS DB', 'err'); return; }
+  if (extSzFobIdx === -1) { toast('Missing "ExtSzFOB" in ACS DB', 'err'); return; }
+  if (cbdidIdx    === -1) { toast('Missing "CBDID" in ACS DB', 'err'); return; }
+
+  const sizeAIdx = dataA.headers.indexOf('EXTRACTED_SIZE');
+
+  // Build ACS index
+  const indexA = new Map();
+  const indexANoColor = new Map();
+  dataA.rows.forEach((row, idx) => {
+    const key = JOIN_KEY_PAIRS
+      .map(kp => normalizeJoinKey(row[dataA.headers.indexOf(kp.a)], kp.a)).join('|');
+    if (!indexA.has(key)) indexA.set(key, []);
+    indexA.get(key).push({ row, idx });
+
+    const keyNC = JOIN_KEY_PAIRS.filter(kp => kp.a !== 'ColorwayCode')
+      .map(kp => normalizeJoinKey(row[dataA.headers.indexOf(kp.a)], kp.a)).join('|');
+    if (!indexANoColor.has(keyNC)) indexANoColor.set(keyNC, []);
+    indexANoColor.get(keyNC).push({ row, idx });
+  });
+
+  // Build Costsheet index (optional)
+  const cIdx = buildCostsheetIndex(dataC);
+
+  compRows = [];
+  let globalRow = 0;
+
+  dataBFiles.forEach(fileB => {
+    const bHdr          = fileB.headers;
+    const localQuoteIdx = bHdr.indexOf('LOCAL_QUOTE_AMOUNT');
+    const origSizeIdx   = bHdr.indexOf('ORIG_SIZE_DATA');
+    const sizeDataIdx   = bHdr.indexOf('SIZE_DATA');
+    if (localQuoteIdx === -1) { toast(`"${fileB.name}" missing LOCAL_QUOTE_AMOUNT`, 'err'); return; }
+
+    fileB.rows.forEach(rowB => {
+      globalRow++;
+
+      const bRawSize       = sizeDataIdx !== -1 ? String(rowB[sizeDataIdx]??'').trim() : '';
+      const bConvertedSize = bRawSize || 'ALL_REG_SIZE_RB';
+
+      // ACS join key
+      const joinKeyStr = JOIN_KEY_PAIRS.map(kp => {
+        const idx = bHdr.indexOf(kp.b);
+        return normalizeJoinKey(idx !== -1 ? rowB[idx] : '', kp.a);
+      }).join('|');
+
+      // Costsheet join key (season|style|color|factory — note different column names)
+      const cJoinKey = [
+        normalizeJoinKey(bHdr.indexOf('SEASON_YEAR') !== -1 ? rowB[bHdr.indexOf('SEASON_YEAR')] : '', 'Season'),
+        normalizeJoinKey(bHdr.indexOf('STYLE')       !== -1 ? rowB[bHdr.indexOf('STYLE')]       : '', 'StyleNumber'),
+        normalizeJoinKey(bHdr.indexOf('COLOR')       !== -1 ? rowB[bHdr.indexOf('COLOR')]       : '', 'color'),
+        normalizeJoinKey(bHdr.indexOf('FTYCODE')     !== -1 ? rowB[bHdr.indexOf('FTYCODE')]     : '', 'FactoryCode'),
+      ].join('|');
+      const cJoinKeyNC = [
+        normalizeJoinKey(bHdr.indexOf('SEASON_YEAR') !== -1 ? rowB[bHdr.indexOf('SEASON_YEAR')] : '', 'Season'),
+        normalizeJoinKey(bHdr.indexOf('STYLE')       !== -1 ? rowB[bHdr.indexOf('STYLE')]       : '', 'StyleNumber'),
+        normalizeJoinKey(bHdr.indexOf('FTYCODE')     !== -1 ? rowB[bHdr.indexOf('FTYCODE')]     : '', 'FactoryCode'),
+      ].join('|');
+
+      // ACS lookup
+      let candidates = indexA.get(joinKeyStr) || [];
+      if (!candidates.length) {
+        const colorNorm = normalizeJoinKey(bHdr.indexOf('COLOR') !== -1 ? rowB[bHdr.indexOf('COLOR')] : '', 'ColorwayCode');
+        if (colorNorm === 'all_solid') {
+          const keyNC = JOIN_KEY_PAIRS.filter(kp => kp.a !== 'ColorwayCode')
+            .map(kp => { const i = bHdr.indexOf(kp.b); return normalizeJoinKey(i !== -1 ? rowB[i] : '', kp.a); }).join('|');
+          candidates = indexANoColor.get(keyNC) || [];
+        }
+      }
+
+      const matchA        = matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx);
+      const rowA          = matchA ? matchA.row : null;
+      const localQuoteVal = String(rowB[localQuoteIdx]??'').trim();
+
+      function bDisplayVal(kp) {
+        if (kp.a === 'EXTRACTED_SIZE') return origSizeIdx !== -1 ? String(rowB[origSizeIdx]??'').trim() : bRawSize;
+        const i = bHdr.indexOf(kp.b);
+        const v = i !== -1 ? String(rowB[i]??'').trim() : '';
+        if (kp.b === 'COLOR' && v === '') return 'ALL_SOLID';
+        return v;
+      }
+
+      // Costsheet lookup
+      const cResult = lookupCostsheet(cIdx, bConvertedSize, cJoinKey, cJoinKeyNC);
+
+      if (rowA) {
+        const keyDisplay = KEY_PAIRS.map(kp => {
+          const aVal = String(rowA[dataA.headers.indexOf(kp.a)]??'').trim();
+          const bVal = bDisplayVal(kp);
+          let match  = normalizeJoinKey(aVal, kp.a) === normalizeJoinKey(bVal, kp.a);
+          if (kp.a === 'EXTRACTED_SIZE') {
+            const parts = aVal.toLowerCase().split(/[_\-]+/);
+            match = parts.includes(bVal.toLowerCase())
+              || aVal.toLowerCase() === convertBSize(bVal).toLowerCase()
+              || aVal.toLowerCase().includes(bVal.toLowerCase());
+          }
+          return { aVal, bVal, match, aName: kp.a };
+        });
+
+        const rawDbSize   = extractSizeFromCBDID(String(rowA[cbdidIdx]??'').trim());
+        const dbCbdidSize = convertBExtendSize(rawDbSize);
+
+        let fobSource, dbFobValue;
+        if (bConvertedSize.toLowerCase() === dbCbdidSize.toLowerCase()) {
+          fobSource = 'FinalFOB'; dbFobValue = String(rowA[finalFobIdx]??'').trim();
+        } else {
+          fobSource = 'ExtSzFOB'; dbFobValue = String(rowA[extSzFobIdx]??'').trim();
+        }
+
+        const numL = parseFloat(localQuoteVal), numF = parseFloat(dbFobValue);
+        const lqVsAcs = !isNaN(numL) && !isNaN(numF)
+          ? Math.abs(numL - numF) < 0.0001
+          : localQuoteVal.toLowerCase() === dbFobValue.toLowerCase();
+
+        // Costsheet value match
+        let cMatch = null, cFobValue = '', cDateStr = '';
+        if (cResult && cResult.matched) {
+          cFobValue = cResult.fobVal;
+          cDateStr  = cResult.dateStr;
+          const numC = parseFloat(cFobValue);
+          cMatch = !isNaN(numL) && !isNaN(numC)
+            ? Math.abs(numL - numC) < 0.0001
+            : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+        }
+
+        // 3-way match: LOCAL_QUOTE_AMT must equal ACS FOB AND CS Final FOB (when Costsheet loaded).
+        // If Costsheet isn't loaded, fall back to the 2-way ACS comparison.
+        const hasCData = dataC !== null;
+        const acsMatch = hasCData ? (lqVsAcs && cMatch === true) : lqVsAcs;
+
+        compRows.push({
+          rowIdx: globalRow, srcFile: fileB.name, srcColorIdx: fileB.colorIdx,
+          keys: keyDisplay, bSize: bConvertedSize, dbCbdidSize,
+          fobSource, dbFobValue, localQuoteVal,
+          valueMatch: acsMatch, status: 'matched', joinKeyStr,
+          cFobValue, cDateStr, cMatch, cMatched: cResult?.matched ?? false,
+          cSizeVal: cResult?.sizeRaw || '', cSizeNorm: cResult?.sizeNorm || '',
+          lqVsAcs
+        });
+      } else {
+        const keyDisplay = KEY_PAIRS.map(kp => ({ aVal:'', bVal:bDisplayVal(kp), match:false, aName:kp.a }));
+        const keyNCDiag  = JOIN_KEY_PAIRS.filter(kp => kp.a !== 'ColorwayCode')
+          .map(kp => { const i = bHdr.indexOf(kp.b); return normalizeJoinKey(i !== -1 ? rowB[i]:'', kp.a); }).join('|');
+        const dbColorsForKey = (indexANoColor.get(keyNCDiag)||[])
+          .map(c => String(c.row[dataA.headers.indexOf('ColorwayCode')]??'').trim()||'(empty)')
+          .filter((v,i,a) => a.indexOf(v)===i).slice(0,6);
+
+        let cMatch = null, cFobValue = '', cDateStr = '';
+        if (cResult && cResult.matched) {
+          cFobValue = cResult.fobVal; cDateStr = cResult.dateStr;
+          const numC = parseFloat(cFobValue), numL2 = parseFloat(localQuoteVal);
+          cMatch = !isNaN(numL2) && !isNaN(numC)
+            ? Math.abs(numL2 - numC) < 0.0001
+            : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+        }
+
+        compRows.push({
+          rowIdx: globalRow, srcFile: fileB.name, srcColorIdx: fileB.colorIdx,
+          keys: keyDisplay, bSize: bConvertedSize, dbCbdidSize:'',
+          fobSource:'N/A', dbFobValue:'', localQuoteVal,
+          valueMatch: false, status:'noKeyMatch', joinKeyStr,
+          dbHasKey: indexA.has(joinKeyStr), dbColorsForKey,
+          cFobValue, cDateStr, cMatch, cMatched: cResult?.matched ?? false,
+          cSizeVal: cResult?.sizeRaw || '', cSizeNorm: cResult?.sizeNorm || '',
+          lqVsAcs: false
+        });
+      }
+    });
+  });
+
+  populateDropdowns();
+  renderTable();
+  document.getElementById('emptyMsg').style.display     = 'none';
+  document.getElementById('resultsInner').style.display = 'flex';
+
+  const mc = compRows.filter(r => r.valueMatch).length;
+  const dc2 = compRows.filter(r => r.status==='matched' && !r.valueMatch).length;
+  const nc = compRows.filter(r => r.status==='noKeyMatch').length;
+  toast(`Done — ${mc} ACS match · ${dc2} diff · ${nc} no key match`, 'ok');
+}
+
+function populateDropdowns() {
+  const seasons   = [...new Set(compRows.map(r => r.keys.find(k=>k.aName==='Season')?.bVal||'').filter(Boolean))].sort();
+  const factories = [...new Set(compRows.map(r => r.keys.find(k=>k.aName==='FactoryCode')?.bVal||'').filter(Boolean))].sort();
+  const selS = document.getElementById('filterSeason');
+  const selF = document.getElementById('filterFactory');
+  const pS = selS.value, pF = selF.value;
+  selS.innerHTML = '<option value="">All Seasons</option>'  + seasons.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  selF.innerHTML = '<option value="">All Factories</option>' + factories.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (seasons.includes(pS))   selS.value = pS;
+  if (factories.includes(pF)) selF.value = pF;
+}
+
+function renderTable() {
+  const hasC = dataC !== null;
+
+  document.getElementById('rHead').innerHTML = `<tr>
+    <th class="hrow" rowspan="2">#</th>
+    <th class="hb"   rowspan="2">Source File</th>
+    <th class="ha"   colspan="5">🔑 Key Columns</th>
+    <th class="hlogic grp" colspan="${hasC?3:2}">Size Comparison</th>
+    <th class="hlogic grp">FOB Source</th>
+    <th class="ha grp">ACS FOB</th>
+    <th class="hb grp">PPS FOB</th>
+    ${hasC ? `<th class="hc grp">WISDOM FINAL FOB</th><th class="hc">Max Input Date</th>` : ''}
+    <th class="hrow grp">ACS Match?</th>
+  </tr><tr>
+    <th class="ha">Season</th><th class="ha">Size</th><th class="ha">Style</th>
+    <th class="ha">Color</th><th class="ha">Factory</th>
+    <th class="hlogic grp">PPS SIZE</th>
+    <th class="hlogic">ACS CBDID SIZE</th>
+    ${hasC ? `<th class="hc">WISDOM SIZE</th>` : ''}
+    <th class="hlogic grp">Used</th>
+    <th class="ha grp">Value</th>
+    <th class="hb grp">Value</th>
+    ${hasC ? `<th class="hc grp">Value</th><th class="hc">Max Date</th>` : ''}
+    <th class="hrow grp">Result</th>
+  </tr>`;
+
+  const q        = document.getElementById('searchBox').value.toLowerCase().trim();
+  const fSeason  = document.getElementById('filterSeason')?.value  || '';
+  const fFactory = document.getElementById('filterFactory')?.value || '';
+  let rows = compRows;
+  if (filterMode==='match') rows = rows.filter(r=>r.valueMatch);
+  if (filterMode==='diff')  rows = rows.filter(r=>r.status==='matched'&&!r.valueMatch);
+  if (filterMode==='nokey') rows = rows.filter(r=>r.status==='noKeyMatch');
+  if (fSeason)  rows = rows.filter(r=>(r.keys.find(k=>k.aName==='Season')?.bVal||'')===fSeason);
+  if (fFactory) rows = rows.filter(r=>(r.keys.find(k=>k.aName==='FactoryCode')?.bVal||'')===fFactory);
+  if (q) rows = rows.filter(r=>
+    r.keys.some(k=>k.aVal.toLowerCase().includes(q)||k.bVal.toLowerCase().includes(q))
+    ||r.localQuoteVal.toLowerCase().includes(q)
+    ||r.dbFobValue.toLowerCase().includes(q)
+    ||r.srcFile.toLowerCase().includes(q)
+    ||(r.cFobValue||'').toLowerCase().includes(q)
+  );
+
+  document.getElementById('cntMatch').textContent = rows.filter(r=>r.valueMatch).length;
+  document.getElementById('cntDiff').textContent  = rows.filter(r=>r.status==='matched'&&!r.valueMatch).length;
+  document.getElementById('cntNoKey').textContent = rows.filter(r=>r.status==='noKeyMatch').length;
+  document.getElementById('cntRows').textContent  = rows.length;
+
+  const tbody = document.getElementById('rBody');
+  tbody.innerHTML = rows.slice(0,2000).map(row => {
+    const isMatch = row.valueMatch;
+    const isNoKey = row.status === 'noKeyMatch';
+    const fc = FILE_COLORS[row.srcColorIdx] || FILE_COLORS[0];
+
+    const srcCell = `<td><span class="src-badge" style="color:${fc.hex};background:${fc.bg};border-color:${fc.border};">
+      <span style="width:6px;height:6px;border-radius:50%;background:${fc.hex};display:inline-block;"></span>
+      ${esc(row.srcFile)}</span></td>`;
+
+    const keyCells = row.keys.map(k => {
+      const cls = isNoKey ? 'cell-key-miss' : (k.match ? 'cell-key-match' : 'cell-key-miss');
+      return `<td class="${cls}" title="A: ${esc(k.aVal)} | B: ${esc(k.bVal)}">${esc(k.bVal||'—')}</td>`;
+    }).join('');
+
+    const szMatch  = row.bSize.toLowerCase() === row.dbCbdidSize.toLowerCase();
+    const szCls    = szMatch ? 'cell-match' : 'cell-miss';
+    const bSzCell  = `<td class="grp ${isNoKey?'cell-empty':szCls}">${esc(row.bSize||'—')}</td>`;
+    const dbSzCell = `<td class="${isNoKey?'cell-empty':szCls}">${esc(row.dbCbdidSize||'—')}</td>`;
+
+    // WISDOM SIZE — only when costsheet loaded; coloured by match with PPS size
+    let wSzCell = '';
+    if (hasC) {
+      if (!row.cMatched) {
+        wSzCell = `<td class="cell-empty">—</td>`;
+      } else {
+        const wMatch = (row.cSizeNorm||'').toLowerCase() === (row.bSize||'').toLowerCase();
+        wSzCell = `<td class="${wMatch ? 'cell-match' : 'cell-miss'}">${esc(row.cSizeVal||'—')}</td>`;
+      }
+    }
+
+    const fobTag = row.fobSource==='FinalFOB'?'<span class="fob-tag final">Final FOB</span>'
+      :row.fobSource==='ExtSzFOB'?'<span class="fob-tag ext">ExtSzFOB</span>'
+      :'<span class="fob-tag no-match">N/A</span>';
+
+    const dbCls  = isMatch?'cell-match':(isNoKey?'cell-empty':'cell-miss');
+    const lqCls  = isMatch?'cell-match':(isNoKey?'cell-empty':'cell-miss');
+
+    let acsResult;
+    if (isNoKey) {
+      const dbColors = (row.dbColorsForKey&&row.dbColorsForKey.length)
+        ?`<div style="margin-top:3px;">DB colors: <span style="color:var(--a2)">${row.dbColorsForKey.map(esc).join(', ')}</span></div>`
+        :`<div style="margin-top:3px;color:var(--mismatch);">No DB record for this season+style+factory</div>`;
+      acsResult = `<span style="color:var(--only);">⚠ No Key Match</span>
+        <div style="margin-top:4px;color:var(--dim);font-size:.65rem;line-height:1.5;white-space:normal;max-width:260px;">
+          <div>Key: <span style="color:var(--muted);">${esc(row.joinKeyStr||'')}</span></div>${dbColors}</div>`;
+    } else if (isMatch) {
+      acsResult = '<span class="badge-match"></span><span style="color:var(--match);">✓ Match</span>';
+    } else {
+      const reasons = [];
+      if (row.lqVsAcs === false) reasons.push('PPS≠ACS');
+      if (hasC && row.cMatched && row.cMatch === false) reasons.push('PPS≠WISDOM');
+      if (hasC && !row.cMatched) reasons.push('No WISDOM');
+      const hint = reasons.length
+        ? `<div style="color:var(--dim);font-size:.65rem;margin-top:2px;">${reasons.join(' · ')}</div>`
+        : '';
+      acsResult = `<span class="badge-miss"></span><span style="color:var(--mismatch);">✗ Diff</span>${hint}`;
+    }
+
+    // Costsheet columns (Final FOB value + Max Input Date)
+    let cCells = '';
+    if (hasC) {
+      if (!row.cMatched) {
+        cCells = `<td class="grp cell-empty">—</td><td class="cell-empty">—</td>`;
+      } else {
+        const cCls = row.cMatch ? 'cell-match' : 'cell-miss';
+        cCells = `<td class="grp ${cCls}">${esc(row.cFobValue||'—')}</td>
+          <td class="cell-c">${esc(row.cDateStr||'—')}</td>`;
+      }
+    }
+
+    return `<tr>
+      <td class="row-num">${row.rowIdx}</td>
+      ${srcCell}${keyCells}
+      ${bSzCell}${dbSzCell}${wSzCell}
+      <td class="grp" style="text-align:center;">${fobTag}</td>
+      <td class="grp ${dbCls}">${esc(row.dbFobValue||'—')}</td>
+      <td class="grp ${lqCls}">${esc(row.localQuoteVal||'—')}</td>
+      ${cCells}
+      <td class="grp">${acsResult}</td>
+    </tr>`;
+  }).join('');
+
+  if (rows.length>2000) {
+    tbody.innerHTML += `<tr><td colspan="99" style="text-align:center;color:var(--muted);padding:12px;font-size:.73rem;">
+      Showing 2,000 of ${rows.length} rows — export CSV for full data</td></tr>`;
+  }
+}
+
+function setFilter(mode, btn) {
+  filterMode = mode;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function exportCSV() {
+  if (!compRows.length) return;
+  const hasC = dataC !== null;
+  const hdr = ['Row','Source_File','Season_B','Size_B','Style_B','Color_B','Factory_B',
+               'B_Size_Converted','DB_CBDID_Size','FOB_Source','ACS_FOB_Value',
+               'LOCAL_QUOTE_AMOUNT',
+               ...(hasC?['Costsheet_Final_FOB','Costsheet_Max_Input_Date']:[]),
+               'ACS_Match','ACS_Status'];
+  const lines = [hdr.map(cv).join(',')];
+  compRows.forEach(r => lines.push([
+    r.rowIdx, r.srcFile,
+    ...r.keys.map(k=>k.bVal),
+    r.bSize, r.dbCbdidSize, r.fobSource, r.dbFobValue, r.localQuoteVal,
+    ...(hasC?[r.cFobValue||'', r.cDateStr||'']:[]),
+    r.valueMatch?'YES':'NO', r.status
+  ].map(cv).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+  a.download = 'local_quote_validation.csv';
+  a.click();
+  toast('CSV exported','ok');
+}
+
+function cv(v){const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+let toastT;
+function toast(msg,type='ok'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.className='show '+type;
+  clearTimeout(toastT);toastT=setTimeout(()=>el.className='',3500);
+}
+</script>
+</body>
+</html>
