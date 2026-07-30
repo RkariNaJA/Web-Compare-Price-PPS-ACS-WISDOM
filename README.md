@@ -1,4 +1,4 @@
-# PPS · ACS · WISDOM 3-Way Validator — Handover Documentation
+# PPS · ACS · WISDOM 3-Way Validator — Handover Documentation — Hi-Tech Apparel
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
