@@ -2,7 +2,7 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-07-16 · **Original author / design contact:** admin@example.com
+**Last updated:** 2026-07-31 · **Original author / design contact:** admin@example.com
 
 ---
 
@@ -22,7 +22,7 @@
 2. Edit `frontend/.env` → `VITE_BACKEND_URL=http://<new-ip>:5001`.
 3. Rebuild — `cd frontend` then `npm run build`.
 4. Restart **both** servers (they are plain console windows and do **not** auto-restart after a reboot):
-   - Backend: `python sql_backend.py` : [py -m pip install -r requirements.txt] first if you cant run the Backend
+   - Backend: `python sql_backend.py` (or `python serve.py` once you're on waitress — §9.2b) : [py -m pip install -r requirements.txt] first if you cant run the Backend
    - Frontend: `python -m http.server 8080 --directory dist` : [NPM INSTALL] first if you cant run the Frontend
 5. Tell users the new URL: `http://<new-ip>:8080`.
 
@@ -176,7 +176,7 @@ There are **two separate connections**, and they're encrypted by **different** t
 | `AD_ALLOWED_GROUPS`                                  | Comma-separated group CNs/DNs allowed to **log in**. **Empty = everyone.**                                                                                                                                                                                                |
 | `AD_EDITOR_GROUPS` ⚠️                                | _(obsolete — superseded 2026-07-20 by app-managed groups; no longer read; safe to delete)_ Formerly named the edit/save groups.                                                                                                                                           |
 | `AD_READONLY_GROUPS` ⚠️                              | _(obsolete — superseded 2026-07-20; no longer read; safe to delete)_                                                                                                                                                                                                      |
-| `INITIAL_ADMINS`                                     | Comma-separated AD `sAMAccountName`s always treated as **full admins** (can_edit + can_manage), even before any groups exist — bootstrap + lock-out recovery. Currently `your-admin-username`.                                                                                     |
+| `INITIAL_ADMINS`                                     | Comma-separated AD `sAMAccountName`s always treated as **full admins** (can_edit + can_manage), even before any groups exist — bootstrap + lock-out recovery. Currently `your-admin-username`.                                                                            |
 | `AD_CA_CERT_FILE`                                    | PEM for an internal CA, if Python doesn't already trust the AD cert.                                                                                                                                                                                                      |
 | `FLASK_SECRET_KEY`                                   | Signs the session cookie. Must stay **stable** (changing it logs everyone out) **and** be a strong random secret — permissions ride in the cookie, so the default `dev-insecure-change-me` would let anyone forge an admin session. **Set a real secret before go-live.** |
 | `SESSION_LIFETIME_DAYS`                              | How long a login lasts (default 1).                                                                                                                                                                                                                                       |
@@ -303,19 +303,24 @@ text — prune later if it ever grows).
       signed session cookie, so the default `dev-insecure-change-me` lets anyone forge a
       `can_manage` admin session. Set a long random value.
 - [ ] **`LOCAL_AUTH_ENABLED=false`** — disables the `Admin`/`1234` dev backdoor.
-- [ ] **`AD_ALLOWED_GROUPS=<real group(s)>`** — restrict who can **log in**. _(Still need to
-      decide the 1–2 groups.)_
-- [ ] **Set up app groups + `INITIAL_ADMINS`** — edit/manage rights are now **app-managed**
-      (built 2026-07-20): log in as an `INITIAL_ADMINS` user and create the groups in-app (see
-      the "Per-group roles" note in the Authentication section). _The old `AD_EDITOR_GROUPS`
-      scaffold is obsolete._
+  <!-- - [ ] **`AD_ALLOWED_GROUPS=<real group(s)>`** — restrict who can **log in**. _(Still need to
+        decide the 1–2 groups.)_ [No Need Anymore] -->
+  <!-- - [ ] **Set up app groups + `INITIAL_ADMINS`** — edit/manage rights are now **app-managed**
+        (built 2026-07-20): log in as an `INITIAL_ADMINS` user and create the groups in-app (see
+        the "Per-group roles" note in the Authentication section). _The old `AD_EDITOR_GROUPS`
+        scaffold is obsolete._ [No Need Anymore] -->
 - [ ] **`CORS_ALLOWED_ORIGINS` = the FQDN** — or make everything same-origin (see C) and CORS
       isn't needed at all.
 
 ### B. Reliability — do to be "always on"
 
-- [ ] **Run Flask under `waitress`** (production WSGI server), not `python sql_backend.py` — the
-      built-in Flask server is single-threaded and dev-only.
+- [x] **Run Flask under `waitress`** (production WSGI server), not `python sql_backend.py` — the
+      built-in Flask server is single-threaded and dev-only. **Code side done 2026-07-31:**
+      `waitress==3.0.0` is in `requirements.txt` and **`DashBoard/serve.py`** is the entry point.
+      Per server: `python -m pip install -r requirements.txt`, then `python serve.py` (expect
+      `* waitress serving on http://0.0.0.0:5001 (8 threads)`). Override with `SERVE_HOST` /
+      `SERVE_PORT` / `SERVE_THREADS` — set `SERVE_HOST=127.0.0.1` once C's reverse proxy is in front,
+      so Flask no longer faces the LAN. _Still to do: run it on the server._
 - [ ] **Register the backend + frontend as Windows services (NSSM)** so they auto-start on boot.
       Today they're console windows that die on logout/reboot.
 - [ ] **Give the server a DNS name (FQDN)** — users hit `https://pps-validator.example.local`
@@ -339,8 +344,11 @@ Frontend + backend become the **same origin** → the session cookie just works 
 
 ### D. Housekeeping
 
-- [ ] Add `waitress` to `requirements.txt`, then `pip install -r requirements.txt` on the server
-      (also pulls `ldap3`, `python-dotenv`).
+- [x] ~~Add `waitress` to `requirements.txt`~~ — **done 2026-07-31** (moved out of
+      `requirements-dev.txt`, where it would never have been installed on a server). Still run
+      `python -m pip install -r requirements.txt` **on each server** (also pulls `ldap3`,
+      `python-dotenv`). Use `python -m pip`, not bare `pip` — bare `pip` can resolve to a different
+      interpreter than `python` and install where your `python` can't see it.
 - [ ] Ensure `DashBoard/.env` exists on the server with **production** values (it's gitignored —
       it will NOT come from git).
 - [ ] Point NSSM to write stdout/stderr to log files (helps debug AD/login).
@@ -354,8 +362,8 @@ Frontend + backend become the **same origin** → the session cookie just works 
 
 ### Code vs infra split
 
-- **Code/config (small, ~30 min):** add `waitress` + a run script, flip the `.env` production
-  values, point the frontend at the same origin, rebuild.
+- **Code/config (small, ~30 min):** ~~add `waitress` + a run script~~ (**done** — `serve.py`), flip
+  the `.env` production values, point the frontend at the same origin, rebuild.
 - **Infra (on the server):** cert + DNS, reverse proxy + cert binding, NSSM services — a runbook
   to be written.
 
@@ -505,14 +513,15 @@ config from `DashBoard/.env`. **SQLite** (`annotations.db`) is the only thing th
 Server** is read-only source data.
 
 ```
-DashBoard/                       ← Flask backend · run: python sql_backend.py
+DashBoard/                       ← Flask backend · dev: python sql_backend.py · prod: python serve.py
 ├── sql_backend.py          Flask app (:5001) · all routes · guards · session/CORS · SQL Server conn
+├── serve.py                production entry point — runs `app` under waitress (use this on a server)
 ├── auth_ad.py              credential check: local → AD (LDAP/StartTLS) → AD_ALLOWED_GROUPS policy
 ├── annotations_db.py       SQLite: Error From / Done values; save() also returns the change diffs
 ├── groups_db.py            SQLite: app groups & permissions; resolve_perms() at login
 ├── logs_db.py              SQLite: admin Log page — presence / login_events / change_log
 ├── annotations.db          the ONE SQLite file the *_db.py modules share (WAL) · backup = copy it
-├── requirements.txt        runtime deps: Flask, flask-cors, pyodbc, ldap3, python-dotenv
+├── requirements.txt        runtime deps: Flask, flask-cors, pyodbc, ldap3, python-dotenv, waitress
 ├── requirements-dev.txt    test-only dep: pytest
 ├── .env                    config + secrets (AD, local acct, FLASK_SECRET_KEY, INITIAL_ADMINS, CORS)
 └── tests/                  pytest suite · run: python -m pytest tests/ -v
@@ -525,19 +534,21 @@ DashBoard/                       ← Flask backend · run: python sql_backend.py
 
 **What each file does, in more detail:**
 
-- **`sql_backend.py`** — The Flask application and the only process you run (`python sql_backend.py`, port 5001). It defines **every HTTP route**: auth (`/login`, `/logout`, `/me`), the SQL Server data endpoints (`/get_file_a_data`, `/get_pps_factories`, `/get_pps_data`, `/get_costsheet_data`), the annotation read/save (`/annotations`), the group-management routes (`/groups*`), and the admin Log routes (`/ping`, `/admin/presence|logins|changes`). Data endpoints stringify every cell (SQL `NULL` → `""`), expand underscored `ColorwayCode` into one row each, and return `{ name, headers, rows }`. It also holds the **session/cookie config** (signed with `FLASK_SECRET_KEY`, HttpOnly, `SameSite=Lax`, 1-day lifetime, `Secure` only when `COOKIE_SECURE=true`), CORS-with-credentials, the **three access guards** (`@login_required` → 401 · `@require_edit` / `@require_manage` → 403), and the **SQL Server connection helper** (Windows `Trusted_Connection`, auto-picks the newest installed ODBC driver; `SERVER` / `DATABASE` / `TABLE_*` are constants at the top of the file). It imports and wires together all the modules below — e.g. the login route calls `auth_ad` to check the password, `groups_db.resolve_perms` to compute the user's rights, and `logs_db.record_login` to log it.
+- **`sql_backend.py`** — The Flask application and the only process you run (in dev, `python sql_backend.py`, port 5001; on a server, `python serve.py` — see below). It defines **every HTTP route**: auth (`/login`, `/logout`, `/me`), the SQL Server data endpoints (`/get_file_a_data`, `/get_pps_factories`, `/get_pps_data`, `/get_costsheet_data`), the annotation read/save (`/annotations`), the group-management routes (`/groups*`), and the admin Log routes (`/ping`, `/admin/presence|logins|changes`). Data endpoints stringify every cell (SQL `NULL` → `""`), expand underscored `ColorwayCode` into one row each, and return `{ name, headers, rows }`. It also holds the **session/cookie config** (signed with `FLASK_SECRET_KEY`, HttpOnly, `SameSite=Lax`, 1-day lifetime, `Secure` only when `COOKIE_SECURE=true`), CORS-with-credentials, the **three access guards** (`@login_required` → 401 · `@require_edit` / `@require_manage` → 403), and the **SQL Server connection helper** (Windows `Trusted_Connection`, auto-picks the newest installed ODBC driver; `SERVER` / `DATABASE` / `TABLE_*` are constants at the top of the file). It imports and wires together all the modules below — e.g. the login route calls `auth_ad` to check the password, `groups_db.resolve_perms` to compute the user's rights, and `logs_db.record_login` to log it.
+
+- **`serve.py`** — The **production entry point** (added 2026-07-31). Three lines of real work: import `app` from `sql_backend`, hand it to **waitress**, listen. Use it instead of `python sql_backend.py` on any shared or always-on host — Flask's built-in server is single-threaded and prints its own "development server" warning for good reason. Because it *imports* `sql_backend`, everything that module does at import time still happens first (`load_dotenv()`, the three `init_db()` calls), so config and the SQLite tables are ready before the first request; and because the `serve()` call sits behind `if __name__ == '__main__'`, importing the module doesn't start a listener. Host/port/threads come from **`SERVE_HOST` · `SERVE_PORT` · `SERVE_THREADS`** (defaults `0.0.0.0` · `5001` · `8`) so the same file works in every environment with no edits — set `SERVE_HOST=127.0.0.1` once a reverse proxy fronts the app and Flask stops facing the LAN. This is also what NSSM should point at (§10.3), rather than at the `waitress-serve` console script, which depends on the service account's `PATH`.
 
 - **`auth_ad.py`** — The **credential check only** — no Flask, no database. `authenticate(username, password)` first tries the local dev account (if `LOCAL_AUTH_ENABLED`), then binds to Active Directory over LDAP/StartTLS, where AD itself verifies the password (bind as `user@domain` in `SIMPLE` mode or `DOMAIN\user` in `NTLM` mode). On success it locates the account with `AD_USER_FILTER`, reads the person's profile (name, email) and their `memberOf` groups, and applies the `AD_ALLOWED_GROUPS` policy that decides **who may log in at all** (a bare CN or a full DN both match; empty = everyone). It returns a plain dict `{username, display_name, email, groups, source}` (`source` = `ad` or `local`) and never touches sessions or app permissions (those belong to `sql_backend` + `groups_db`). Ported from the team's Django auth backend; `ldap3` is imported lazily so the module loads even where the AD stack isn't installed.
 
 - **`annotations_db.py`** — SQLite storage for the two user-filled columns, **Error From** and **Done** — the `annotations(scope, row_key, error_from, done, saved_by, saved_at)` table, PK `(scope, row_key)`. `scope` is always `"shared"` today (one set everyone sees; it exists so per-group sets could be added later with no migration), and `row_key` is the row's stable business identity (`FTYCODE|Season|Style|Color|ORIG_SIZE|LOCAL_QUOTE_AMOUNT`). `get_all()` reads them; `save()` upserts changed values, **deletes** cleared (blank) rows, stamps `saved_by`/`saved_at` only on a real change (last-write-wins — the value itself keeps no history), and — since the Log feature — also **returns the list of field-level changes** (`Error From` / `Done`, old → new, clears included) that `sql_backend` writes to the audit log. Runs in WAL mode with a 5-second busy-timeout so simultaneous saves just queue. This is what makes one person's save visible to everyone else.
 
-- **`groups_db.py`** — SQLite storage for the app's **own groups & permissions** (the `groups(name, can_edit, can_manage, …)` and `group_members(group_name, username, …)` tables). Admins create groups here and drop AD usernames into them (stored **casefolded**, so matching is case-insensitive); each group carries `can_edit` / `can_manage`. It exposes the full CRUD (`create_group`, `list_groups`, `set_group_perms`, `delete_group`, `add_member`, `remove_member`), but the key function is `resolve_perms(username)`, called at login to compute effective rights — **most-permissive** across all the user's groups, `INITIAL_ADMINS` (from `.env`) always full admin, **no group = read-only**. Because perms are read at login, a group change takes effect on the user's **next** login. These are the *app's* groups, deliberately separate from AD security groups.
+- **`groups_db.py`** — SQLite storage for the app's **own groups & permissions** (the `groups(name, can_edit, can_manage, …)` and `group_members(group_name, username, …)` tables). Admins create groups here and drop AD usernames into them (stored **casefolded**, so matching is case-insensitive); each group carries `can_edit` / `can_manage`. It exposes the full CRUD (`create_group`, `list_groups`, `set_group_perms`, `delete_group`, `add_member`, `remove_member`), but the key function is `resolve_perms(username)`, called at login to compute effective rights — **most-permissive** across all the user's groups, `INITIAL_ADMINS` (from `.env`) always full admin, **no group = read-only**. Because perms are read at login, a group change takes effect on the user's **next** login. These are the _app's_ groups, deliberately separate from AD security groups.
 
 - **`logs_db.py`** — SQLite storage for the **admin Log page**, three tables: `presence` (one row per user, **upserted** by the heartbeat — `active_users()` returns everyone seen in the last 120s), `login_events` (appended on each login — `logins_for_week()` reads one week), and `change_log` (appended by the save route — `changes_for_week()` reads one week). Timestamps are stored in **UTC**; a "week" is the **local Sunday–Saturday** week (so it rolls over at Sunday midnight). It only records and reads these tables — the routes that expose them live in `sql_backend`, and nothing edits or deletes the rows (append-only, read-only from the outside). No auto-pruning.
 
 - **`annotations.db`** — The **single SQLite file** all three `*_db.py` modules share (each calls its own `init_db()` at startup to create its tables; WAL mode so readers and the one writer don't block each other). It holds everything the app persists locally — annotations, groups, and logs. It is **not** the source data (that's SQL Server), so a backup is simply copying this one file. The path is overridable via the `VALIDATOR_DB_PATH` env var (used by the tests to point at a throwaway temp DB). Gitignored, along with its `-wal` / `-shm` sidecar files.
 
-- **`requirements.txt` / `requirements-dev.txt`** — The Python dependencies, version-pinned. **Runtime:** Flask + flask-cors (web server + cross-origin cookies), pyodbc (SQL Server), ldap3 (Active Directory), python-dotenv (reads `.env`) — `pip install -r requirements.txt`. **Dev-only:** pytest, for the test suite — `pip install -r requirements-dev.txt`.
+- **`requirements.txt` / `requirements-dev.txt`** — The Python dependencies, version-pinned. **Runtime:** Flask + flask-cors (web server + cross-origin cookies), pyodbc (SQL Server), ldap3 (Active Directory), python-dotenv (reads `.env`), **waitress** (the production WSGI server `serve.py` runs on) — `pip install -r requirements.txt`. **Dev-only:** pytest, for the test suite — `pip install -r requirements-dev.txt`. Note `waitress` belongs in the **runtime** file, not the dev one: on a server it is the thing actually serving traffic, and if it's only in `requirements-dev.txt` then a server that installed just `requirements.txt` fails at startup with `ModuleNotFoundError: waitress` (or `waitress-serve : term not recognized`).
 
 - **`.env`** — All configuration and secrets in one gitignored file, loaded once at startup (`load_dotenv()`): AD settings (`AD_ENABLED`, server/domain/base-DN, `AD_START_TLS`, `AD_AUTH_MODE`, `AD_USER_FILTER`, `AD_ALLOWED_GROUPS`), the local dev account, `FLASK_SECRET_KEY` (signs the session cookie — must be a **strong** secret), `INITIAL_ADMINS`, `SESSION_LIFETIME_DAYS`, `COOKIE_SECURE`, and `CORS_ALLOWED_ORIGINS`. **Never commit it.** (The Authentication section's config table lists every key.)
 
@@ -549,27 +560,27 @@ logs) → JSON comes back. `auth_ad.py` is only touched at `/login`.
 
 ### 4.1 Endpoints
 
-| Method | Path                                | Login  | Returns                                                             |
-| ------ | ----------------------------------- | ------ | ------------------------------------------------------------------- |
-| GET    | `/`                                 | —      | Plain HTML health check                                             |
-| POST   | `/login`                            | —      | Verify creds (local → AD); set session; `{ user }`                  |
-| POST   | `/logout`                           | —      | Clear the session                                                   |
-| GET    | `/me`                               | —      | `{ user }` if signed in, else 401                                   |
-| GET    | `/get_file_a_data`                  | ✓      | `{ name, headers, rows }` from `dbo.ACS`                            |
-| GET    | `/get_pps_factories`                | ✓      | `{ factories }` — distinct `FTYCODE`                                |
-| GET    | `/get_pps_data`                     | ✓      | `{ name, headers, rows }` for one factory                           |
-| GET    | `/get_costsheet_data`               | ✓      | `{ name, headers, rows }` from Costsheet view                       |
-| GET    | `/annotations`                      | ✓      | `{ annotations }` — saved Error From / Done                         |
-| POST   | `/annotations`                      | edit   | Save annotations; fresh `{ annotations }` (403 if not an editor)    |
-| GET    | `/groups`                           | manage | `{ groups }` — all groups + members + perm flags                    |
-| POST   | `/groups`                           | manage | Create a group `{name, can_edit, can_manage}` (400 blank · 409 dup) |
-| PATCH  | `/groups/<name>`                    | manage | Set a group's `can_edit` / `can_manage`                             |
-| DELETE | `/groups/<name>`                    | manage | Delete a group (and its members)                                    |
-| POST   | `/groups/<name>/members`            | manage | Add a member `{username}` (404 if group missing)                    |
-| DELETE | `/groups/<name>/members/<username>` | manage | Remove a member                                                     |
-| POST   | `/ping`                             | ✓      | Heartbeat — mark me active (any logged-in user)                     |
-| GET    | `/admin/presence`                   | manage | `{ active }` — users seen in the last 2 min                         |
-| GET    | `/admin/logins?date=`               | manage | `{ logins }` — logins for the week containing ?date (default: this week) |
+| Method | Path                                | Login  | Returns                                                                           |
+| ------ | ----------------------------------- | ------ | --------------------------------------------------------------------------------- |
+| GET    | `/`                                 | —      | Plain HTML health check                                                           |
+| POST   | `/login`                            | —      | Verify creds (local → AD); set session; `{ user }`                                |
+| POST   | `/logout`                           | —      | Clear the session                                                                 |
+| GET    | `/me`                               | —      | `{ user }` if signed in, else 401                                                 |
+| GET    | `/get_file_a_data`                  | ✓      | `{ name, headers, rows }` from `dbo.ACS`                                          |
+| GET    | `/get_pps_factories`                | ✓      | `{ factories }` — distinct `FTYCODE`                                              |
+| GET    | `/get_pps_data`                     | ✓      | `{ name, headers, rows }` for one factory                                         |
+| GET    | `/get_costsheet_data`               | ✓      | `{ name, headers, rows }` from Costsheet view                                     |
+| GET    | `/annotations`                      | ✓      | `{ annotations }` — saved Error From / Done                                       |
+| POST   | `/annotations`                      | edit   | Save annotations; fresh `{ annotations }` (403 if not an editor)                  |
+| GET    | `/groups`                           | manage | `{ groups }` — all groups + members + perm flags                                  |
+| POST   | `/groups`                           | manage | Create a group `{name, can_edit, can_manage}` (400 blank · 409 dup)               |
+| PATCH  | `/groups/<name>`                    | manage | Set a group's `can_edit` / `can_manage`                                           |
+| DELETE | `/groups/<name>`                    | manage | Delete a group (and its members)                                                  |
+| POST   | `/groups/<name>/members`            | manage | Add a member `{username}` (404 if group missing)                                  |
+| DELETE | `/groups/<name>/members/<username>` | manage | Remove a member                                                                   |
+| POST   | `/ping`                             | ✓      | Heartbeat — mark me active (any logged-in user)                                   |
+| GET    | `/admin/presence`                   | manage | `{ active }` — users seen in the last 2 min                                       |
+| GET    | `/admin/logins?date=`               | manage | `{ logins }` — logins for the week containing ?date (default: this week)          |
 | GET    | `/admin/changes?date=`              | manage | `{ changes }` — change history for the week containing ?date (default: this week) |
 
 Data endpoints convert every cell to `str` (SQL `NULL` → `""`), expand `ColorwayCode` on underscore, and return HTTP 500 `{ error }` on any exception. **Login column:** ✓ = `@login_required` (401 without a valid session cookie); **edit** = `@require_edit` (403 unless `can_edit`); **manage** = `@require_manage` (403 unless `can_manage`). Every `/groups*` route returns the fresh full `{ groups }` list. The `/ping` heartbeat and `/admin/*` reads power the admin **Log page** (see the Authentication section's "Admin Log page"). See the **Authentication** section (incl. "Per-group roles") for `/login` · `/logout` · `/me` and the permission model, and §4.5 for the annotations store.
@@ -1012,7 +1023,7 @@ If someone reports "I expected the newest record but got an older one," they may
 
 ## 9. Running the Project
 
-**TL;DR:** Install prerequisites → start the backend (`python sql_backend.py`) → start the frontend (`npm run dev` for local, or `npm run build` + a static server for sharing). Backend URL comes from `frontend/.env` → `VITE_BACKEND_URL`.
+**TL;DR:** Install prerequisites → start the backend (`python sql_backend.py` in dev, **`python serve.py`** on a server — §9.2b) → start the frontend (`npm run dev` for local, or `npm run build` + a static server for sharing). Backend URL comes from `frontend/.env` → `VITE_BACKEND_URL`.
 
 ### 9.1 Prerequisites
 
@@ -1021,11 +1032,11 @@ If someone reports "I expected the newest record but got an older one," they may
 - Microsoft ODBC Driver for SQL Server (17 or 18)
 - A Windows account with SELECT on `dbo.ACS` and `dbo.VIEW_COSTSHEET_WISDOM`
 
-### 9.2 Backend
+### 9.2 Backend (dev)
 
 ```powershell
 cd "DashBoard"
-python -m pip install -r requirements.txt   # Flask, flask-cors, pyodbc (pinned)
+python -m pip install -r requirements.txt   # Flask, flask-cors, pyodbc, ldap3, python-dotenv, waitress (pinned)
 python sql_backend.py
 ```
 
@@ -1036,6 +1047,40 @@ Common startup errors:
 - `pyodbc.InterfaceError` — no SQL Server ODBC driver installed. Install "ODBC Driver 17 for SQL Server" or newer.
 - `Login failed for user` — the Windows user running Flask lacks DB permission.
 - `Cannot open server` — VPN or firewall blocking `<SQL_HOST>`.
+
+### 9.2b Backend (production — `serve.py` + waitress)
+
+`python sql_backend.py` starts Flask's **built-in development server**: single-threaded, so one slow
+ACS fetch blocks every other user, and not hardened for anything but local work. On any shared or
+always-on host, run the app under **waitress** instead — same app, same port, same routes:
+
+```powershell
+cd "DashBoard"
+python -m pip install -r requirements.txt   # includes waitress
+python serve.py
+```
+
+Should print `* waitress serving on http://0.0.0.0:5001 (8 threads)`. Sanity-check the same way
+(`http://localhost:5001` → health message), then confirm a real data call (**Load ACS from DB**).
+
+`serve.py` imports `app` from `sql_backend` and hands it to waitress — **no application code
+changes**, and everything `sql_backend` does at import time (`load_dotenv()`, the three `init_db()`
+calls) still runs first. Tune it with env vars rather than editing the file:
+
+| Var             | Default   | Notes                                                                                    |
+| --------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `SERVE_HOST`    | `0.0.0.0` | Set to `127.0.0.1` once a reverse proxy fronts the app (§10.4) so Flask isn't LAN-facing. |
+| `SERVE_PORT`    | `5001`    | Keep in sync with `VITE_BACKEND_URL` / the proxy rule.                                   |
+| `SERVE_THREADS` | `8`       | Concurrent request workers. 8 is ample for this user count.                              |
+
+Common startup errors (in addition to the ODBC/DB ones above):
+
+- **`waitress-serve : term not recognized`** — you were using the console script; use
+  `python serve.py` instead, which doesn't depend on `PATH`. (Root cause is usually that the
+  package's `Scripts\` folder isn't on `PATH`, or waitress was never installed on that machine.)
+- **`ModuleNotFoundError: No module named 'waitress'`** — `requirements.txt` wasn't installed on
+  **this** host, or a different interpreter was used. Re-run `python -m pip install -r requirements.txt`
+  (with `python -m pip`, not bare `pip`), then `python -m pip show waitress` to confirm.
 
 ### 9.3 Frontend (dev)
 
@@ -1065,7 +1110,7 @@ npm run preview   # serves the built dist/ locally on port 4173
 
 ## 10. Hosting on the Internal Network
 
-**TL;DR:** Three deployment options, in increasing operational maturity: **A** = both processes on your PC (start here), **B** = Flask as an NSSM Windows service on an always-on box, **C** = backend on the DB server behind an IIS reverse proxy. A → B → C is a linear upgrade with **zero application code changes**.
+**TL;DR:** Three deployment options, in increasing operational maturity: **A** = both processes on your PC (start here), **B** = `serve.py`/waitress as an NSSM Windows service on an always-on box, **C** = backend on the DB server behind an IIS reverse proxy. A → B → C is a linear upgrade with **zero application code changes** — B and C differ only in how `serve.py` is launched and what `SERVE_HOST` is set to.
 
 ### 10.1 The three options
 
@@ -1131,6 +1176,9 @@ cd "DashBoard"
 python sql_backend.py
 ```
 
+_Since colleagues are already hitting this, prefer **`python serve.py`** in Terminal 2 (§9.2b) —
+same port and routes, but multi-threaded, so one slow ACS fetch doesn't block everyone else._
+
 **Access URL:** `http://<OLD_SERVER_IP>:8080` — share this with colleagues.
 
 **Verify before sharing:**
@@ -1141,7 +1189,7 @@ python sql_backend.py
 
 ### 10.3 Option B — NSSM service on a shared server
 
-Same shape as Option A, but Flask runs as a Windows service (auto-starts, survives reboots, no login required).
+Same shape as Option A, but the backend runs under **waitress** (`serve.py`) as a Windows service — auto-starts, survives reboots, no login required.
 
 **Extra steps vs. A:**
 
@@ -1149,15 +1197,29 @@ Same shape as Option A, but Flask runs as a Windows service (auto-starts, surviv
 2. Copy the `DashBoard/` folder to that machine.
 3. Install Python 3.9+, run `pip install -r requirements.txt`, and install the SQL Server ODBC driver.
 4. Get a **service account** from IT with `db_datareader` on `<DATABASE>` (or SELECT on the two specific objects).
-5. Download **NSSM** (Non-Sucking Service Manager, free) and register the backend as a service:
+5. Download **NSSM** (Non-Sucking Service Manager, free) and register the backend as a service.
+   Point it at **`serve.py`** (waitress), not `sql_backend.py` — a service has no console to babysit,
+   so it should not be running the dev server:
    ```powershell
-   nssm install ValidatorBackend "C:\Python312\python.exe" "C:\apps\validator\sql_backend.py"
+   nssm install ValidatorBackend "C:\Python312\python.exe" "C:\apps\validator\serve.py"
    nssm set    ValidatorBackend AppDirectory "C:\apps\validator"
    nssm set    ValidatorBackend ObjectName ".\svc-validator" "<password>"
+   nssm set    ValidatorBackend AppStdout "C:\apps\validator\logs\backend.out.log"
+   nssm set    ValidatorBackend AppStderr "C:\apps\validator\logs\backend.err.log"
    nssm start  ValidatorBackend
    ```
-6. Do the same for the static file server (optional — or use IIS).
+   Use `python.exe` + `serve.py` rather than `waitress-serve.exe` — the console script's location
+   depends on the **service account's** `PATH`, which is not the `PATH` you see in your own shell.
+   Set the `AppStdout`/`AppStderr` log files now, not later: once it's a service there's no window,
+   and AD/login errors are exactly what you'll need to read. Create the `logs\` folder first.
+6. Do the same for the static file server (optional — or use IIS, which is already a service).
 7. Open the firewall as in Option A.
+
+**Verify it survives a reboot** — that's the entire point of B: `nssm status ValidatorBackend`
+should report `SERVICE_RUNNING`, and it should still say that after restarting the machine without
+anyone logging in. Also confirm the **service account** (`ObjectName`) is the one with
+`db_datareader` — Windows integrated auth uses the identity running the process (§10.6), so a
+wrong account here starts cleanly and then 500s on every data endpoint.
 
 **Access URL:** same shape as A, pointing at the new machine's hostname/IP.
 
@@ -1170,7 +1232,7 @@ Runtime picture:
 ```
 DB Server (<SQL_HOST>)
 ├── SQL Server (existing)
-├── Flask backend (NSSM service, bound to 127.0.0.1:5001 — NOT LAN-exposed)
+├── Flask backend via serve.py/waitress (NSSM service, 127.0.0.1:5001 — NOT LAN-exposed)
 └── IIS
     ├── / → static files from DashBoard\frontend\dist\
     └── /api/* → reverse-proxied to http://127.0.0.1:5001/*
@@ -1179,7 +1241,11 @@ DB Server (<SQL_HOST>)
 **Setup** (assumes IT helps with IIS):
 
 1. Copy `DashBoard/` to the DB server (e.g. `C:\apps\validator\`).
-2. Install Python + pyodbc there. Register `sql_backend.py` as an NSSM service, but change `app.run(host='0.0.0.0', port=5001)` → `host='127.0.0.1'` so the backend listens on localhost only.
+2. Install Python + pyodbc there. Register **`serve.py`** as an NSSM service (§10.3 step 5) and set
+   **`SERVE_HOST=127.0.0.1`** in `DashBoard/.env` so the backend listens on localhost only — the
+   proxy reaches it, the LAN can't. _(No code edit needed: `serve.py` reads the host from the
+   environment. The older instruction here was to hand-edit `app.run(host=…)` in `sql_backend.py`;
+   that line only runs in dev now and editing it has no effect under waitress.)_
 3. Install the **URL Rewrite** and **ARR (Application Request Routing)** IIS modules (both free from Microsoft).
 4. Create an IIS site pointing at `C:\apps\validator\frontend\dist\`.
 5. Add a rewrite rule: match `^api/(.*)` → rewrite to `http://127.0.0.1:5001/{R:1}`.
