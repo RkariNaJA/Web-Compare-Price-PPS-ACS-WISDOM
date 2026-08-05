@@ -22,7 +22,7 @@ export interface CostsheetEntry {
   szRaw: string;    // size as displayed to the user
   isExt: boolean;   // true = extended size, so fobVal came from `Extended Size FOB`
   dateVal: Date | null;  // First Input Date parsed; null if missing/unparseable
-  fobVal: string;   // Final FOB as a trimmed string
+  fobVal: string;   // winning FOB as a trimmed string — source depends on isExt
   versionVal: string;      // CBD Version as a trimmed string
   costSheetNoVal: string;  // Cost Sheet No. as a trimmed string
 }
