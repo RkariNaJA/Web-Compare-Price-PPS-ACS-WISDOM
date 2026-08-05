@@ -10,7 +10,7 @@ import { C_KEY_MAP } from './constants';
 import {
   findCostsheetIdx,
   normalizeJoinKey,
-  normalizeSizeToken,
+  normalizeCostsheetSizeToken,
   parseDate,
 } from './normalize';
 
@@ -20,6 +20,7 @@ export interface CostsheetEntry {
   row: Row;
   szNorm: string;   // size after normalization (used for matching)
   szRaw: string;    // size as displayed to the user
+  isExt: boolean;   // true = extended size, so fobVal came from `Extended Size FOB`
   dateVal: Date | null;  // First Input Date parsed; null if missing/unparseable
   fobVal: string;   // Final FOB as a trimmed string
   versionVal: string;      // CBD Version as a trimmed string
@@ -63,6 +64,7 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
   const factoryIdx = findCostsheetIdx(hdr, 'factory');
   const sizeIdx = findCostsheetIdx(hdr, 'size');
   const fobIdx = findCostsheetIdx(hdr, 'fob');
+  const extFobIdx = findCostsheetIdx(hdr, 'extFob');
   const dateIdx = findCostsheetIdx(hdr, 'date');
   // Extra display-only columns — absence is not fatal (they just render as em-dashes).
   const versionIdx = findCostsheetIdx(hdr, 'version');
@@ -71,6 +73,7 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
   // Collect any critical columns that couldn't be resolved — the toolbar will warn the user.
   const missing: string[] = [];
   if (fobIdx === -1) missing.push(`FOB ("${C_KEY_MAP.fob}")`);
+  if (extFobIdx === -1) missing.push(`Extended Size FOB ("${C_KEY_MAP.extFob}")`);
   if (dateIdx === -1) missing.push(`Date ("${C_KEY_MAP.date}")`);
   if (seasonIdx === -1) missing.push('Season');
   if (styleIdx === -1) missing.push('Style');
@@ -87,13 +90,17 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
     const szUp = szRaw.toUpperCase();
     if (szUp === 'ALL_REG_SIZE') szRaw = 'ALL_REG_SIZE_RB';
     if (szUp === 'ALL_EXTEND_SIZE') szRaw = 'ALL_EXTEND_SIZE_RB';
-    const szNorm = normalizeSizeToken(szRaw);
+    const szNorm = normalizeCostsheetSizeToken(szRaw);
     const dateVal = dateIdx !== -1 ? parseDate(row[dateIdx]) : null;
-    const fobVal = fobIdx !== -1 ? String(row[fobIdx] ?? '').trim() : '';
+    // Extended-size rows price from `Extended Size FOB`; everything else from
+    // `Final FOB`. Resolved here so nothing downstream needs to know which column won.
+    const isExt = szNorm === 'ALL_EXTEND_SIZE_RB';
+    const srcIdx = isExt ? extFobIdx : fobIdx;
+    const fobVal = srcIdx !== -1 ? String(row[srcIdx] ?? '').trim() : '';
     const versionVal = versionIdx !== -1 ? String(row[versionIdx] ?? '').trim() : '';
     const costSheetNoVal = costSheetNoIdx !== -1 ? String(row[costSheetNoIdx] ?? '').trim() : '';
 
-    const entry: CostsheetEntry = { row, szNorm, szRaw, dateVal, fobVal, versionVal, costSheetNoVal };
+    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, versionVal, costSheetNoVal };
 
     // Full 4-part key (color included)
     const key = [
@@ -170,7 +177,12 @@ export function lookupCostsheet(
     return cur.dateVal > prev.dateVal ? cur : prev;
   }, null);
 
-  if (!best) return empty;
+  // An extended-size row whose `Extended Size FOB` cell is empty has no usable price:
+  // report it unmatched (blank + "No WISDOM") rather than falling back to `Final FOB`
+  // or to an older row — the MAX(First Input Date) winner is still the only candidate.
+  // Deliberately NOT applied to regular rows: a blank `Final FOB` keeps its existing
+  // behaviour so nothing that works today changes verdict.
+  if (!best || (best.isExt && !best.fobVal)) return empty;
 
   // Format the winning record's First Input Date as YYYY-MM-DD in *local* time.
   // Previously used toISOString(), which converts to UTC and shifted the date
