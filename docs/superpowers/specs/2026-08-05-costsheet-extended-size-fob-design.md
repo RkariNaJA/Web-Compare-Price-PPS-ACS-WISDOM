@@ -65,6 +65,9 @@ with the new `extendedsizefob` alias.
   the request's wording ("if in costsheet db size = …").
 - **Missing `Extended Size FOB` ⇒ no usable Costsheet price.** The row renders `—` and is
   excluded from the 3-way verdict, exactly like any unmatched row.
+- **That rule applies to extended-size rows ONLY.** A regular-size row with an empty
+  `Final FOB` keeps today's behaviour (renders `—`, counts as a Diff). This keeps the change
+  strictly additive: no row that works today can change verdict.
 - **No UI changes.** `cMatched` already drives the blank rendering and the `No WISDOM` diff
   reason (`ResultsTable.tsx:241, 275, 366, 407, 421`), so returning `matched: false` produces the
   agreed behaviour with no component edits.
@@ -140,14 +143,18 @@ const fobVal = isExt
 ```
 
 `CostsheetEntry` keeps its single `fobVal` field — the source is already resolved by the time it
-is stored, so nothing downstream needs to know which column it came from.
+is stored, so nothing downstream needs to know which column it came from. It gains one internal
+field, `isExt: boolean`, so the lookup can tell which rows the empty-FOB rule applies to.
 
-**`lookupCostsheet`** — after the MAX-date winner is chosen, treat an empty `fobVal` as no usable
-price:
+**`lookupCostsheet`** — after the MAX-date winner is chosen, treat an empty `fobVal` on an
+**extended** row as no usable price:
 
 ```ts
-if (!best || !best.fobVal) return empty;   // was: if (!best) return empty;
+if (!best || (best.isExt && !best.fobVal)) return empty;   // was: if (!best) return empty;
 ```
+
+The `isExt` guard is deliberate: without it, regular rows with a blank `Final FOB` would flip
+from Diff to No CS, which is a change to existing results that was not requested.
 
 ### Resulting behaviour
 
@@ -173,6 +180,8 @@ if (!best || !best.fobVal) return empty;   // was: if (!best) return empty;
   silently falling back to `Final FOB` — consistent with the NULL decision above.
 - **Bare `ALL_EXTEND_SIZE`** (no `_RB` suffix) is still repaired at `costsheet.ts:89` before
   normalisation, so it continues to reach the extended branch.
+- **Regular-size row with an empty `Final FOB`.** Unchanged — still `matched: true` with a blank
+  value, which renders `—` and reads as a Diff. Only extended rows are subject to the new rule.
 
 ## Verification
 
@@ -193,6 +202,9 @@ Cases to cover:
 6. Header variant `ALL_EXTEND_SIZE` (no `_RB`) → extended.
 7. `normalizeSizeToken` still returns `ALL_REG_SIZE_RB` for `4X` / `48` — proving PPS and ACS
    are untouched.
+8. Regular row with an empty `Final FOB` → still `matched: true` with a blank value, proving the
+   new rule did not leak into regular rows.
+9. The view lacking an `Extended Size FOB` column → warned in `missing`, extended rows unmatched.
 
 Plus `npm run build` (`tsc -b && vite build`) to confirm the TypeScript compiles, and the backend
 pytest suite is expected to be unaffected (no backend files change).
