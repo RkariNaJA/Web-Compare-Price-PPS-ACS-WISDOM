@@ -40,6 +40,7 @@ export const C_KEY_MAP = {
   factory: 'Factory',
   size: 'Size',
   fob: 'Final FOB',                // MAX First Input Date wins; this is the value we compare against
+  extFob: 'Extended Size FOB',     // used INSTEAD of `fob` when the Costsheet row is an extended size
   date: 'First Input Date',
   version: 'CBD Version',          // shown as "Version" in the results table
   costSheetNo: 'Cost Sheet No.',   // shown as "Cost Sheet No" in the results table
@@ -55,6 +56,7 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
   factory: ['factory', 'factorycode', 'fty', 'ftycode'],
   size: ['size', 'sizedata', 'sizecode'],
   fob: ['finalfob', 'finalfobprice', 'finalfobamount'],
+  extFob: ['extendedsizefob', 'extsizefob', 'extendsizefob'],
   date: ['firstinputdate', 'inputdate', 'firstinput'],
   version: ['cbdversion', 'version'],
   costSheetNo: ['costsheetno', 'costsheetnumber', 'costsheet#'],
