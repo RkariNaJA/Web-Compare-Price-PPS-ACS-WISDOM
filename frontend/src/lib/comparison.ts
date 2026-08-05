@@ -9,7 +9,7 @@
  * Everything here is pure — no React, no fetch. Called on Validate button click.
  */
 import type { CompRow, KeyDisplay, PPSFile, Row, TableData } from './types';
-import { JOIN_KEY_PAIRS, KEY_PAIRS } from './constants';
+import { JOIN_KEY_PAIRS, KEY_PAIRS, PREFERRED_CURRENCY } from './constants';
 import {
   convertBExtendSize,
   convertBSize,
@@ -26,7 +26,8 @@ export interface CompareResult {
   diffCount: number;
   noKeyCount: number;
   warnings: string[];
-  collapsedRows: number;   // raw PPS rows merged away by de-duplication (0 if none)
+  collapsedRows: number;         // raw PPS rows merged away by de-duplication (0 if none)
+  currencyFilteredRows: number;  // rows dropped because the group also had a PREFERRED_CURRENCY quote
 }
 
 // One ACS row plus its original index — kept together so we can trace back
@@ -89,6 +90,36 @@ function matchDbRowForSize(
 // Kept in sync with dedupePPSRows so a saved value maps back to exactly one row.
 function makeRowKey(parts: string[]): string {
   return parts.map((p) => p.trim().toLowerCase()).join('|');
+}
+
+// dbo.PPS quotes the same price once per currency (USD and THB today), so one logical
+// quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 3.71 USD and 115.84 THB
+// are the same price at a ~31 rate. Collapse each (season, style, color, size) group to
+// the preferred currency. The amount is deliberately NOT part of the group key: it is the
+// very thing that differs between twins.
+//
+// Groups with NO preferred-currency row pass through untouched, so a THB-only quote still
+// reaches the table (flagged non-comparable via CompRow.comparable). Returns the rows
+// unchanged when LOCAL_CURRENCY is absent — an uploaded spreadsheet has no such column.
+// Runs BEFORE dedupePPSRows, which still keys on the amount and so still keeps genuinely
+// different quotes apart.
+function preferUSDRows(fileB: PPSFile): Row[] {
+  const h = fileB.headers;
+  const curIdx = h.indexOf('LOCAL_CURRENCY');
+  if (curIdx === -1) return fileB.rows;
+  const sizeCol = h.indexOf('ORIG_SIZE_DATA') !== -1 ? 'ORIG_SIZE_DATA' : 'SIZE_DATA';
+  const groupIdx = ['SEASON_YEAR', 'STYLE', 'COLOR', sizeCol].map((c) => h.indexOf(c));
+  if (groupIdx.some((i) => i === -1)) return fileB.rows;
+
+  const groupOf = (row: Row) =>
+    groupIdx.map((i) => String(row[i] ?? '').trim().toLowerCase()).join('|');
+  const isPreferred = (row: Row) =>
+    String(row[curIdx] ?? '').trim().toUpperCase() === PREFERRED_CURRENCY;
+
+  const groupsWithPreferred = new Set<string>();
+  for (const row of fileB.rows) if (isPreferred(row)) groupsWithPreferred.add(groupOf(row));
+
+  return fileB.rows.filter((row) => !groupsWithPreferred.has(groupOf(row)) || isPreferred(row));
 }
 
 // dbo.PPS is a quote-history log: the same style/color/size/quote is re-inserted
@@ -193,10 +224,12 @@ export function runComparison(
   const compRows: CompRow[] = [];
   let globalRow = 0;  // 1-based row counter across all PPS files, shown in the # column
   let rawPPSRows = 0; // total PPS rows across processed files BEFORE de-duplication
+  let currencyFilteredRows = 0; // rows dropped by preferUSDRows
 
   dataBFiles.forEach((fileB) => {
     const bHdr = fileB.headers;
     const localQuoteIdx = bHdr.indexOf('LOCAL_QUOTE_AMOUNT');
+    const currencyIdx = bHdr.indexOf('LOCAL_CURRENCY');
     const origSizeIdx = bHdr.indexOf('ORIG_SIZE_DATA');
     const sizeDataIdx = bHdr.indexOf('SIZE_DATA');
     // Display-only PPS columns surfaced before the key columns in the results table.
@@ -215,7 +248,10 @@ export function runComparison(
     // Collapse this factory's quote-history duplicates to one row per validation
     // case before comparing (see dedupePPSRows above).
     rawPPSRows += fileB.rows.length;
-    const dedupedRows = dedupePPSRows(fileB);
+    // Collapse currency twins first, then the quote-history duplicates.
+    const preferredRows = preferUSDRows(fileB);
+    currencyFilteredRows += fileB.rows.length - preferredRows.length;
+    const dedupedRows = dedupePPSRows({ ...fileB, rows: preferredRows });
 
     // ── Walk every (de-duplicated) PPS row and match it against ACS + Costsheet ──
     dedupedRows.forEach((rowB) => {
@@ -289,6 +325,10 @@ export function runComparison(
       const matchA = matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx);
       const rowA = matchA ? matchA.row : null;
       const localQuoteVal = String(rowB[localQuoteIdx] ?? '').trim();
+      // Raw value so the table shows exactly what the DB holds; the comparable check
+      // normalises the same way preferUSDRows does, so ' usd ' is not kept-then-flagged.
+      const currency = currencyIdx !== -1 ? String(rowB[currencyIdx] ?? '').trim() : '';
+      const comparable = currency === '' || currency.toUpperCase() === PREFERRED_CURRENCY;
 
       // Stable identity for saving Error From / Done — survives re-validation and is
       // identical for every user. Same fields as the de-dup key, plus FTYCODE.
@@ -400,6 +440,8 @@ export function runComparison(
           fobSource,
           dbFobValue,
           localQuoteVal,
+          currency,
+          comparable,
           valueMatch: acsMatch,
           status: 'matched',
           joinKeyStr,
@@ -470,6 +512,8 @@ export function runComparison(
           fobSource: 'N/A',
           dbFobValue: '',
           localQuoteVal,
+          currency,
+          comparable,
           valueMatch: false,
           status: 'noKeyMatch',
           joinKeyStr,
@@ -497,5 +541,5 @@ export function runComparison(
   // How many raw PPS rows were merged away by de-duplication (0 if none).
   const collapsedRows = rawPPSRows - compRows.length;
 
-  return { rows: compRows, matchCount, diffCount, noKeyCount, warnings, collapsedRows };
+  return { rows: compRows, matchCount, diffCount, noKeyCount, warnings, collapsedRows, currencyFilteredRows };
 }

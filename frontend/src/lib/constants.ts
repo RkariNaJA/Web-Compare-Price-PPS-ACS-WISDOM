@@ -62,6 +62,11 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
   costSheetNo: ['costsheetno', 'costsheetnumber', 'costsheet#'],
 };
 
+// Currency the validator compares in. PPS quotes in any other currency are kept but not
+// compared, because the ACS and Costsheet FOBs are all in this currency. Promote to a
+// user-facing setting when real multi-currency support arrives.
+export const PREFERRED_CURRENCY = 'USD';
+
 // When loading a PPS file, keep ONLY these columns. Everything else is dropped
 // so the comparison focuses on what matters and the preview stays readable.
 // MSC_CODE / RESPONSIBLE_DEVELOPER are kept for display in the results table
@@ -75,6 +80,8 @@ export const STRICT_B_COLS = [
   'FTYCODE',
   'SIZE_DATA',
   'LOCAL_QUOTE_AMOUNT',
+  'LOCAL_CURRENCY',   // tells a currency twin from a genuinely different quote
+  'INSERT_DATE',      // makes dedupePPSRows' newest-wins tie-break actually run
 ];
 
 // Regular sizes — any of these get folded into the bucket "ALL_REG_SIZE_RB" during normalization.
