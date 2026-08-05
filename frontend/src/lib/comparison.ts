@@ -26,8 +26,10 @@ export interface CompareResult {
   diffCount: number;
   noKeyCount: number;
   warnings: string[];
-  collapsedRows: number;         // raw PPS rows merged away by de-duplication (0 if none)
-  currencyFilteredRows: number;  // rows dropped because the group also had a PREFERRED_CURRENCY quote
+  collapsedRows: number;         // raw PPS rows that did not survive to output. INCLUDES
+                                  // currencyFilteredRows — subtract it for a duplicates-only figure
+  currencyFilteredRows: number;  // subset of collapsedRows: rows dropped because their group
+                                  // also had a PREFERRED_CURRENCY quote
 }
 
 // One ACS row plus its original index — kept together so we can trace back

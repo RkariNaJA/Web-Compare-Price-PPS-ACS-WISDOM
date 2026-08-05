@@ -58,7 +58,7 @@ export interface CompRow {
   fobSource: FobSource;        // which ACS FOB column was used
   dbFobValue: string;          // the ACS FOB value picked
   localQuoteVal: string;       // PPS LOCAL_QUOTE_AMOUNT
-  currency: string;            // raw LOCAL_CURRENCY ('' when the source has no such column)
+  currency: string;            // raw LOCAL_CURRENCY ('' when the source has no such column, or the cell is empty)
   comparable: boolean;         // false = non-preferred currency, so the FOB comparison is skipped
   valueMatch: boolean;         // the on-screen "Match/Diff" verdict
   status: RowStatus;           // 'matched' = key hit, 'noKeyMatch' = no ACS row found
