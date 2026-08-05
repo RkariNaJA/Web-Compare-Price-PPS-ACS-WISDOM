@@ -14,6 +14,8 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CompRow, RowAnnotation } from '../lib/types';
+import { verdictOf } from '../lib/comparison';
+import { PREFERRED_CURRENCY } from '../lib/constants';
 
 interface Props {
   rows: CompRow[];               // already filtered by App
@@ -340,6 +342,18 @@ export default function ResultsTable({
                   </details>
                 </>
               );
+            } else if (verdictOf(row) === 'notCompared') {
+              // Quoted in a currency the validator does not compare (e.g. THB) — reuse
+              // the neutral --only colour (same as the No Key state), not the red
+              // badge-miss styling, since no comparison ran at all for this row.
+              acsResultNode = (
+                <span
+                  style={{ color: 'var(--only)' }}
+                  title="Quoted in a currency the validator does not compare"
+                >
+                  — not compared
+                </span>
+              );
             } else if (isMatch) {
               acsResultNode = (
                 <>
@@ -412,7 +426,14 @@ export default function ResultsTable({
                   <span className={fobTagCls}>{fobTagText}</span>
                 </td>
                 {/* PPS LOCAL_QUOTE_AMOUNT + ACS FOB value (both coloured by the 3-way verdict) */}
-                <td className={`grp ${lqCls}`}>{row.localQuoteVal || '—'}</td>
+                <td className={`grp ${lqCls}`}>
+                  {row.localQuoteVal || '—'}
+                  {row.currency && row.currency.toUpperCase() !== PREFERRED_CURRENCY && (
+                    <span style={{ opacity: 0.6, marginLeft: 4, fontSize: '.85em' }}>
+                      {row.currency}
+                    </span>
+                  )}
+                </td>
                 <td className={`grp ${dbCls}`}>{row.dbFobValue || '—'}</td>
                 {/* Costsheet columns: WISDOM Final FOB + Version + Cost Sheet No + Max Input Date.
                     Only when File C is loaded. If no CS row matched, show em-dashes. */}
