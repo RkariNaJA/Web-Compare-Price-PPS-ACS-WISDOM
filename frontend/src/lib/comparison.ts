@@ -30,6 +30,19 @@ export interface CompareResult {
                                   // currencyFilteredRows — subtract it for a duplicates-only figure
   currencyFilteredRows: number;  // subset of collapsedRows: rows dropped because their group
                                   // also had a PREFERRED_CURRENCY quote
+  notComparedCount: number;
+}
+
+// The row's verdict, derived in ONE place. Previously this same expression lived in
+// comparison.ts, summary.ts, csv.ts and App.tsx, which is why a fourth state could not be
+// added consistently. noKey is checked first: a row with no ACS match is a key problem
+// regardless of what currency it was quoted in.
+export type Verdict = 'match' | 'diff' | 'noKey' | 'notCompared';
+
+export function verdictOf(r: CompRow): Verdict {
+  if (r.status === 'noKeyMatch') return 'noKey';
+  if (!r.comparable) return 'notCompared';
+  return r.valueMatch ? 'match' : 'diff';
 }
 
 // One ACS row plus its original index — kept together so we can trace back
@@ -399,8 +412,11 @@ export function runComparison(
         // and only fall back to case-insensitive string equality when either side isn't numeric.
         const numL = parseFloat(localQuoteVal);
         const numF = parseFloat(dbFobValue);
-        const lqVsAcs =
-          !isNaN(numL) && !isNaN(numF)
+        // A quote in a non-preferred currency is not comparable against a USD FOB, so no
+        // comparison is performed at all — see verdictOf / CompRow.comparable.
+        const lqVsAcs = !comparable
+          ? false
+          : !isNaN(numL) && !isNaN(numF)
             ? Math.abs(numL - numF) < 0.0001
             : localQuoteVal.toLowerCase() === dbFobValue.toLowerCase();
 
@@ -412,7 +428,7 @@ export function runComparison(
         let cVersionVal = '';
         let cCostSheetNo = '';
         let cDateStr = '';
-        if (cResult && cResult.matched) {
+        if (comparable && cResult && cResult.matched) {
           cFobValue = cResult.fobVal;
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
@@ -536,12 +552,22 @@ export function runComparison(
   });
 
   // Tally quick stats for the toolbar / toast message.
-  const matchCount = compRows.filter((r) => r.valueMatch).length;
-  const diffCount = compRows.filter((r) => r.status === 'matched' && !r.valueMatch).length;
-  const noKeyCount = compRows.filter((r) => r.status === 'noKeyMatch').length;
+  const matchCount = compRows.filter((r) => verdictOf(r) === 'match').length;
+  const diffCount = compRows.filter((r) => verdictOf(r) === 'diff').length;
+  const noKeyCount = compRows.filter((r) => verdictOf(r) === 'noKey').length;
+  const notComparedCount = compRows.filter((r) => verdictOf(r) === 'notCompared').length;
 
   // How many raw PPS rows were merged away by de-duplication (0 if none).
   const collapsedRows = rawPPSRows - compRows.length;
 
-  return { rows: compRows, matchCount, diffCount, noKeyCount, warnings, collapsedRows, currencyFilteredRows };
+  return {
+    rows: compRows,
+    matchCount,
+    diffCount,
+    noKeyCount,
+    warnings,
+    collapsedRows,
+    currencyFilteredRows,
+    notComparedCount,
+  };
 }

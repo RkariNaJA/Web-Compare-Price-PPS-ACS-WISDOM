@@ -7,11 +7,13 @@
  *   No Key = status 'noKeyMatch'  ·  Match = valueMatch  ·  Diff = matched but not equal
  */
 import type { CompRow } from './types';
+import { verdictOf, type Verdict } from './comparison';
 
 export interface VerdictCounts {
   match: number;
   diff: number;
   noKey: number;
+  notCompared: number;
   total: number;
 }
 export interface GroupCount extends VerdictCounts {
@@ -30,11 +32,9 @@ export interface Summary {
 
 const seasonOf = (r: CompRow) => r.keys.find((k) => k.aName === 'Season')?.bVal || '—';
 const factoryOf = (r: CompRow) => r.keys.find((k) => k.aName === 'FactoryCode')?.bVal || '—';
-const verdictOf = (r: CompRow): 'match' | 'diff' | 'noKey' =>
-  r.status === 'noKeyMatch' ? 'noKey' : r.valueMatch ? 'match' : 'diff';
 
-const blank = (): VerdictCounts => ({ match: 0, diff: 0, noKey: 0, total: 0 });
-const bump = (c: VerdictCounts, v: 'match' | 'diff' | 'noKey') => {
+const blank = (): VerdictCounts => ({ match: 0, diff: 0, noKey: 0, notCompared: 0, total: 0 });
+const bump = (c: VerdictCounts, v: Verdict) => {
   c[v] += 1;
   c.total += 1;
 };

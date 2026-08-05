@@ -6,6 +6,7 @@
  * can filter for problem rows in Excel with a single click.
  */
 import type { CompRow, RowAnnotation } from './types';
+import { verdictOf } from './comparison';
 
 // Escape a value for a CSV field: wrap in quotes if it contains a quote, comma,
 // or newline; double up any interior quotes per RFC 4180.
@@ -17,15 +18,14 @@ function csvCell(v: unknown): string {
 
 // Verdict mirrors the on-screen badge exactly so filtering the CSV in Excel
 // matches the "Match / Diff / No Key" toolbar filter the user might already know.
-function verdict(r: CompRow): 'MATCH' | 'DIFF' | 'NO_KEY_MATCH' {
-  if (r.status === 'noKeyMatch') return 'NO_KEY_MATCH';
-  return r.valueMatch ? 'MATCH' : 'DIFF';
-}
+const VERDICT_CSV = {
+  match: 'MATCH', diff: 'DIFF', noKey: 'NO_KEY_MATCH', notCompared: 'NOT_COMPARED',
+} as const;
 
 // For DIFF rows only: build a pipe-delimited reason string like "PPS!=ACS|No_WISDOM"
 // so Excel filters can group by failure mode. Empty for MATCH / NO_KEY_MATCH rows.
 function diffReason(r: CompRow, hasC: boolean): string {
-  if (r.status !== 'matched' || r.valueMatch) return '';
+  if (r.status !== 'matched' || r.valueMatch || !r.comparable) return '';
   const parts: string[] = [];
   if (r.lqVsAcs === false) parts.push('PPS!=ACS');
   if (hasC && r.cMatched && r.cMatch === false) parts.push('PPS!=WISDOM');
@@ -58,6 +58,7 @@ export function exportComparisonCSV(
     'FOB_Source',
     'ACS_FOB_Value',
     'LOCAL_QUOTE_AMOUNT',
+    'LOCAL_CURRENCY',
     ...(hasC ? ['Costsheet_Final_FOB', 'Costsheet_Max_Input_Date'] : []),
     // User-filled columns (not DB-sourced) — mirror the on-screen table order,
     // sitting just before the Verdict.
@@ -81,11 +82,12 @@ export function exportComparisonCSV(
         r.fobSource,
         r.dbFobValue,
         r.localQuoteVal,
+        r.currency,
         ...(hasC ? [r.cFobValue || '', r.cDateStr || ''] : []),
         ann?.errorFrom || '',
         ann?.done ? 'Yes' : '',
         ann?.savedBy || '',
-        verdict(r),
+        VERDICT_CSV[verdictOf(r)],
         diffReason(r, hasC),
       ]
         .map(csvCell)
