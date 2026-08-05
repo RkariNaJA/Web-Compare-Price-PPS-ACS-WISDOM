@@ -446,7 +446,11 @@ export default function ResultsTable({
                   <>
                     {row.cMatched ? (
                       <>
-                        <td className={`grp ${row.cMatch ? 'cell-match' : 'cell-miss'}`}>
+                        <td
+                          className={`grp ${
+                            isNotCompared ? 'cell-empty' : row.cMatch ? 'cell-match' : 'cell-miss'
+                          }`}
+                        >
                           {row.cFobValue || '—'}
                         </td>
                         <td className="cell-c">{row.cVersionVal || '—'}</td>
