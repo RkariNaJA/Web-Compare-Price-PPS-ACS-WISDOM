@@ -45,6 +45,18 @@ export function normalizeSizeToken(raw: unknown): string {
   return s || 'ALL_REG_SIZE_RB';
 }
 
+// Costsheet-only size normalisation. Identical to normalizeSizeToken EXCEPT that
+// EXTEND_SIZE is checked FIRST. '4X' and '48' are the only two values present in
+// both lists, so they resolve to ALL_EXTEND_SIZE_RB here while PPS/ACS keep
+// treating them as regular sizes via normalizeSizeToken. Kept separate on purpose:
+// normalizeSizeToken is shared with FileSlotPPS, which rewrites every uploaded PPS
+// row's SIZE_DATA, so changing it would move PPS bucketing and ACS row matching.
+export function normalizeCostsheetSizeToken(raw: unknown): string {
+  let s = convertBExtendSize(String(raw).trim());
+  if (s !== 'ALL_EXTEND_SIZE_RB') s = convertBSize(s);
+  return s || 'ALL_REG_SIZE_RB';
+}
+
 // ACS stores size at the end of CBDID like:
 //   SU27-HTV-HV8232-S-ALL_SOLID-ALL_REG_SIZE-RB   →   ALL_REG_SIZE_RB
 // The last two dash-separated segments are joined with underscore. If the CBDID
