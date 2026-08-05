@@ -10,6 +10,7 @@ import { C_KEY_MAP } from './constants';
 import {
   findCostsheetIdx,
   normalizeJoinKey,
+  normalizeSizeToken,
   normalizeCostsheetSizeToken,
   parseDate,
 } from './normalize';
@@ -90,11 +91,14 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
     const szUp = szRaw.toUpperCase();
     if (szUp === 'ALL_REG_SIZE') szRaw = 'ALL_REG_SIZE_RB';
     if (szUp === 'ALL_EXTEND_SIZE') szRaw = 'ALL_EXTEND_SIZE_RB';
-    const szNorm = normalizeCostsheetSizeToken(szRaw);
+    // Matching key: unchanged from before this feature. PPS rows are normalised with
+    // the shared normalizeSizeToken (FileSlotPPS.tsx:51), so both sides must agree on
+    // what '4X' and '48' are or those rows stop matching each other.
+    const szNorm = normalizeSizeToken(szRaw);
     const dateVal = dateIdx !== -1 ? parseDate(row[dateIdx]) : null;
-    // Extended-size rows price from `Extended Size FOB`; everything else from
-    // `Final FOB`. Resolved here so nothing downstream needs to know which column won.
-    const isExt = szNorm === 'ALL_EXTEND_SIZE_RB';
+    // FOB source ONLY: the Costsheet-specific resolver treats '4X' and '48' as extended,
+    // so those rows price from `Extended Size FOB` while still matching a regular query.
+    const isExt = normalizeCostsheetSizeToken(szRaw) === 'ALL_EXTEND_SIZE_RB';
     const srcIdx = isExt ? extFobIdx : fobIdx;
     const fobVal = srcIdx !== -1 ? String(row[srcIdx] ?? '').trim() : '';
     const versionVal = versionIdx !== -1 ? String(row[versionIdx] ?? '').trim() : '';
