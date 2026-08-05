@@ -540,6 +540,8 @@ EOF
 
 Keep `LOCAL_CURRENCY` visible in the preview — unlike `INSERT_DATE` it is information the user wants.
 
+**Also correct one stale comment.** `summary.ts:6-7` says the verdict mapping is "identical to the results toolbar" and lists only three states. That claim is false between Tasks 2 and 3; this task makes it true again, so update it to name all four states. This is the only edit permitted in `summary.ts` here.
+
 **Interfaces:**
 - Consumes: `verdictOf`, `Verdict`, `CompareResult.notComparedCount`, `CompareResult.currencyFilteredRows`, `CompRow.currency`
 - Produces: no new exports.
