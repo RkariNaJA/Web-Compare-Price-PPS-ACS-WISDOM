@@ -230,6 +230,9 @@ export default function ResultsTable({
             // Derived flags used to choose which cell classes to apply
             const isMatch = row.valueMatch;
             const isNoKey = row.status === 'noKeyMatch';
+            // Quoted in a currency the validator doesn't compare (e.g. THB) — no
+            // comparison was performed, so cells must not claim agreement OR disagreement.
+            const isNotCompared = verdictOf(row) === 'notCompared';
             // Saved annotation for this row (by stable rowKey); undefined if none.
             const ann = annotations[row.rowKey];
 
@@ -246,8 +249,10 @@ export default function ResultsTable({
             })();
 
             // ACS FOB + PPS FOB cell classes — both driven by the same 3-way verdict.
-            // (Green on Match, red on Diff, dim on NoKey.)
-            const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : 'cell-miss';
+            // (Green on Match, red on Diff, dim on NoKey or NotCompared — notCompared joins
+            // NoKey on the neutral tint since no comparison ran, so it can claim neither
+            // agreement nor disagreement.)
+            const dbCls = isMatch ? 'cell-match' : isNoKey || isNotCompared ? 'cell-empty' : 'cell-miss';
             const lqCls = dbCls;
 
             // Small pill in the "FOB Source" column showing which ACS FOB was used.
@@ -342,7 +347,7 @@ export default function ResultsTable({
                   </details>
                 </>
               );
-            } else if (verdictOf(row) === 'notCompared') {
+            } else if (isNotCompared) {
               // Quoted in a currency the validator does not compare (e.g. THB) — reuse
               // the neutral --only colour (same as the No Key state), not the red
               // badge-miss styling, since no comparison ran at all for this row.

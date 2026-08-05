@@ -124,7 +124,9 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
   // tagged with its source's colorIdx so the preview can show a coloured dot.
   const combinedPreview = (() => {
     if (!files.length) return null;
-    const headers = files[0].headers.filter((h) => h !== 'ORIG_SIZE_DATA');
+    const headers = files[0].headers.filter(
+      (h) => h !== 'ORIG_SIZE_DATA' && h !== 'INSERT_DATE',
+    );
     const previewRows: { row: Row; colorIdx: number }[] = [];
     for (const f of files) {
       const origIdx = f.headers.indexOf('ORIG_SIZE_DATA');

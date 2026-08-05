@@ -3,8 +3,9 @@
  * into Match / Diff / No Key counts, grouped by factory, by season, and by (factory ×
  * season). No React — just data in, data out (so it's trivially testable).
  *
- * Verdict mapping (identical to the results toolbar):
- *   No Key = status 'noKeyMatch'  ·  Match = valueMatch  ·  Diff = matched but not equal
+ * Verdict mapping (identical to the results toolbar, via verdictOf — see comparison.ts):
+ *   No Key = status 'noKeyMatch'  ·  Not Compared = comparable is false  ·
+ *   Match = valueMatch  ·  Diff = matched, comparable, but not equal
  */
 import type { CompRow } from './types';
 import { verdictOf, type Verdict } from './comparison';
