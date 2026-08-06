@@ -14,7 +14,7 @@
 
 - **Do NOT change the `dedupePPSRows` key.** `LOCAL_QUOTE_AMOUNT` stays in it, so the 174 groups with genuinely different USD amounts keep one row per amount. Currency collapsing happens in a separate pass *before* it.
 - **Group on the dedup key MINUS the amount** — `SEASON_YEAR | STYLE | COLOR | <sizeCol>` — because the amount is exactly what differs between currency twins.
-- **Prefer, never filter.** A group with no `PREFERRED_CURRENCY` row must pass through untouched. 5 real quote groups (styles `II5559`, `IR0694`) are THB-only and must not vanish.
+- **Prefer, never filter.** A group with no `PREFERRED_CURRENCY` row must pass through untouched. 5 real quote groups (styles `STYLE-D`, `STYLE-E`) are THB-only and must not vanish.
 - **Never compare a non-preferred-currency quote.** Skip the FOB comparison rather than performing it and failing.
 - **Do NOT modify `sql_backend.py`, `dbo.PPS`, or the ACS / Costsheet logic.**
 - **Do NOT add a test framework or any new file to the repo.** The harness is scratchpad-only.
@@ -96,7 +96,7 @@ const cmp = await load('comparison');
 const ACS = {
   name: 'acs',
   headers: ['Season','StyleNumber','ColorwayCode','FactoryCode','CBDID','FinalFOB','ExtSzFOB','EXTRACTED_SIZE'],
-  rows: [['SU27','HJ3792','ALL_SOLID','HIT','SU27-HIT-HJ3792-S-ALL_SOLID-ALL_EXTEND_SIZE-RB','3.71','3.71','ALL_EXTEND_SIZE_RB']],
+  rows: [['SU27','STYLE-A','ALL_SOLID','HIT','SU27-HIT-STYLE-A-S-ALL_SOLID-ALL_EXTEND_SIZE-RB','4.00','4.00','ALL_EXTEND_SIZE_RB']],
 };
 
 // ── PPS fixture, shaped exactly as FileSlotPPS leaves it ────────────────────
@@ -104,56 +104,56 @@ const ACS = {
 const B_HDR = ['MSC_CODE','RESPONSIBLE_DEVELOPER','SEASON_YEAR','STYLE','COLOR','FTYCODE',
                'SIZE_DATA','LOCAL_QUOTE_AMOUNT','LOCAL_CURRENCY','INSERT_DATE','ORIG_SIZE_DATA'];
 
-function bRow({ style = 'HJ3792', size = '4XL', bucket = 'ALL_EXTEND_SIZE_RB',
+function bRow({ style = 'STYLE-A', size = '4XL', bucket = 'ALL_EXTEND_SIZE_RB',
                 amt, cur, ins = '2026-01-01 00:00:00' }) {
-  return ['MSC1','YAM, REBECCA','SU27',style,'','HIT',bucket,amt,cur,ins,size];
+  return ['MSC1','DEV NAME','SU27',style,'','HIT',bucket,amt,cur,ins,size];
 }
 const ppsFile = (rows, headers = B_HDR) => ({ name: 'pps', headers, rows, colorIdx: 0 });
 const run = (rows, headers) => cmp.runComparison(ACS, [ppsFile(rows, headers)], null);
 
 // ── T1 the reported bug: USD + THB twins collapse to ONE row ────────────────
 let r = run([
-  bRow({ amt: '3.71',   cur: 'USD' }),
-  bRow({ amt: '115.84', cur: 'THB' }),
+  bRow({ amt: '4.00',   cur: 'USD' }),
+  bRow({ amt: '124.00', cur: 'THB' }),
 ]);
 check('T1 twins -> 1 row', r.rows.length, 1);
-check('T1 the USD row survives', [r.rows[0].localQuoteVal, r.rows[0].currency], ['3.71', 'USD']);
+check('T1 the USD row survives', [r.rows[0].localQuoteVal, r.rows[0].currency], ['4.00', 'USD']);
 check('T1 survivor is comparable', r.rows[0].comparable, true);
 check('T1 currencyFilteredRows counts the THB row', r.currencyFilteredRows, 1);
 
 // ── T2 THB-only group survives, flagged not comparable ──────────────────────
-r = run([bRow({ amt: '439.06', cur: 'THB' })]);
+r = run([bRow({ amt: '500.00', cur: 'THB' })]);
 check('T2 THB-only -> 1 row', r.rows.length, 1);
-check('T2 THB-only kept', [r.rows[0].localQuoteVal, r.rows[0].currency], ['439.06', 'THB']);
+check('T2 THB-only kept', [r.rows[0].localQuoteVal, r.rows[0].currency], ['500.00', 'THB']);
 check('T2 THB-only not comparable', r.rows[0].comparable, false);
 check('T2 nothing filtered', r.currencyFilteredRows, 0);
 
 // ── T3 USD-only unchanged ───────────────────────────────────────────────────
-r = run([bRow({ amt: '3.71', cur: 'USD' })]);
+r = run([bRow({ amt: '4.00', cur: 'USD' })]);
 check('T3 USD-only -> 1 row', [r.rows.length, r.rows[0].comparable], [1, true]);
 
 // ── T4 two DISTINCT USD amounts still produce two rows (the 174-group case) ─
 r = run([
   bRow({ amt: '3.50', cur: 'USD' }),
-  bRow({ amt: '3.71', cur: 'USD' }),
+  bRow({ amt: '4.00', cur: 'USD' }),
 ]);
 check('T4 distinct USD amounts -> 2 rows', r.rows.length, 2);
 
 // ── T5 distinct USD amounts AND THB -> both USD rows, THB dropped ───────────
 r = run([
   bRow({ amt: '3.50',   cur: 'USD' }),
-  bRow({ amt: '3.71',   cur: 'USD' }),
-  bRow({ amt: '115.84', cur: 'THB' }),
+  bRow({ amt: '4.00',   cur: 'USD' }),
+  bRow({ amt: '124.00', cur: 'THB' }),
 ]);
 check('T5 -> 2 rows', r.rows.length, 2);
 check('T5 both USD', r.rows.map((x) => x.currency), ['USD', 'USD']);
 
 // ── T6 different SIZES are independent groups ───────────────────────────────
 r = run([
-  bRow({ size: '4XL', amt: '3.71',   cur: 'USD' }),
-  bRow({ size: '4XL', amt: '115.84', cur: 'THB' }),
-  bRow({ size: '5XL', amt: '3.71',   cur: 'USD' }),
-  bRow({ size: '5XL', amt: '115.84', cur: 'THB' }),
+  bRow({ size: '4XL', amt: '4.00',   cur: 'USD' }),
+  bRow({ size: '4XL', amt: '124.00', cur: 'THB' }),
+  bRow({ size: '5XL', amt: '4.00',   cur: 'USD' }),
+  bRow({ size: '5XL', amt: '124.00', cur: 'THB' }),
 ]);
 check('T6 two sizes -> 2 rows', r.rows.length, 2);
 check('T6 both USD', r.rows.map((x) => x.currency), ['USD', 'USD']);
@@ -161,26 +161,26 @@ check('T6 both USD', r.rows.map((x) => x.currency), ['USD', 'USD']);
 // ── T7 no LOCAL_CURRENCY column (uploaded spreadsheet) -> untouched ─────────
 const NO_CUR = B_HDR.filter((h) => h !== 'LOCAL_CURRENCY');
 const stripCur = (row) => row.filter((_, i) => B_HDR[i] !== 'LOCAL_CURRENCY');
-r = run([stripCur(bRow({ amt: '3.71', cur: 'USD' })),
-         stripCur(bRow({ amt: '115.84', cur: 'THB' }))], NO_CUR);
+r = run([stripCur(bRow({ amt: '4.00', cur: 'USD' })),
+         stripCur(bRow({ amt: '124.00', cur: 'THB' }))], NO_CUR);
 check('T7 no currency column -> both rows kept', r.rows.length, 2);
 check('T7 all comparable', r.rows.map((x) => x.comparable), [true, true]);
 check('T7 currency blank', r.rows.map((x) => x.currency), ['', '']);
 
 // ── T8 casing / padding tolerated ───────────────────────────────────────────
 r = run([
-  bRow({ amt: '3.71',   cur: ' usd ' }),
-  bRow({ amt: '115.84', cur: 'thb' }),
+  bRow({ amt: '4.00',   cur: ' usd ' }),
+  bRow({ amt: '124.00', cur: 'thb' }),
 ]);
 check('T8 padded lowercase usd wins', r.rows.length, 1);
 check('T8 comparable', r.rows[0].comparable, true);
 
 // ── T9 exact duplicate USD rows still collapse via dedupePPSRows ────────────
 r = run([
-  bRow({ amt: '3.71', cur: 'USD' }),
-  bRow({ amt: '3.71', cur: 'USD' }),
-  bRow({ amt: '3.71', cur: 'USD' }),
-  bRow({ amt: '3.71', cur: 'USD' }),
+  bRow({ amt: '4.00', cur: 'USD' }),
+  bRow({ amt: '4.00', cur: 'USD' }),
+  bRow({ amt: '4.00', cur: 'USD' }),
+  bRow({ amt: '4.00', cur: 'USD' }),
 ]);
 check('T9 identical USD rows -> 1 row', r.rows.length, 1);
 
@@ -247,7 +247,7 @@ In `frontend/src/lib/comparison.ts`:
 
 ```ts
 // dbo.PPS quotes the same price once per currency (USD and THB today), so one logical
-// quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 3.71 USD and 115.84 THB
+// quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 4.00 USD and 124.00 THB
 // are the same price at a ~31 rate. Collapse each (season, style, color, size) group to
 // the preferred currency. The amount is deliberately NOT part of the group key: it is the
 // very thing that differs between twins.
@@ -340,8 +340,8 @@ git add frontend/src/lib/constants.ts frontend/src/lib/types.ts frontend/src/lib
 git commit -F - <<'EOF'
 Collapse PPS currency twins before de-duplication
 
-dbo.PPS stores the same quote once per currency, so HJ3792/SU27/HIT/4XL
-arrived as two rows: 3.71 USD and 115.84 THB, the same price at a ~31 rate.
+dbo.PPS stores the same quote once per currency, so STYLE-A/SU27/HIT/4XL
+arrived as two rows: 4.00 USD and 124.00 THB, the same price at a ~31 rate.
 FileSlotPPS stripped LOCAL_CURRENCY, so dedupePPSRows -- which keys on the
 amount by design -- could not tell a twin from a genuinely different quote.
 
@@ -392,20 +392,20 @@ check('T10 noKey beats notCompared',
   cmp.verdictOf(mkRow({ status: 'noKeyMatch', comparable: false })), 'noKey');
 
 // ── T11 a non-comparable row is NOT counted as a Diff ──────────────────────
-r = run([bRow({ amt: '439.06', cur: 'THB' })]);
+r = run([bRow({ amt: '500.00', cur: 'THB' })]);
 check('T11 diffCount excludes it', r.diffCount, 0);
 check('T11 counted separately', r.notComparedCount, 1);
 check('T11 no comparison performed', [r.rows[0].valueMatch, r.rows[0].lqVsAcs, r.rows[0].cMatch],
   [false, false, null]);
 
 // ── T12 a comparable USD row that matches still counts as a Match ───────────
-r = run([bRow({ amt: '3.71', cur: 'USD' })]);
+r = run([bRow({ amt: '4.00', cur: 'USD' })]);
 check('T12 match counted', [r.matchCount, r.diffCount, r.notComparedCount], [1, 0, 0]);
 
 // ── T13 summarize() agrees with verdictOf ───────────────────────────────────
 r = run([
-  bRow({ size: '4XL', amt: '3.71',   cur: 'USD' }),
-  bRow({ size: '5XL', amt: '439.06', cur: 'THB' }),
+  bRow({ size: '4XL', amt: '4.00',   cur: 'USD' }),
+  bRow({ size: '5XL', amt: '500.00', cur: 'THB' }),
 ]);
 const s = sum.summarize(r.rows);
 check('T13 totals', [s.totals.match, s.totals.diff, s.totals.notCompared, s.totals.total],
@@ -555,8 +555,8 @@ Append to `$SP/verify-currency.mjs`, before the summary block. This task is most
 ```js
 // ── T14 every Verdict has a filter category (guards the union drifting) ────
 r = run([
-  bRow({ size: '4XL', amt: '3.71',   cur: 'USD' }),
-  bRow({ size: '5XL', amt: '439.06', cur: 'THB' }),
+  bRow({ size: '4XL', amt: '4.00',   cur: 'USD' }),
+  bRow({ size: '5XL', amt: '500.00', cur: 'THB' }),
 ]);
 const seen = new Set(r.rows.map((x) => cmp.verdictOf(x)));
 check('T14 both verdicts present', [...seen].sort(), ['match', 'notCompared']);
@@ -714,8 +714,8 @@ EOF
 - The harness prints `ALL GREEN` (T1–T14).
 - `npm run build` compiles clean.
 - `python -m pytest tests/ -q` still reports 37 passed.
-- `HJ3792` / `SU27` / `HIT` / `4XL` shows **one** row at 3.71 USD.
-- The 5 THB-only groups (`II5559`, `IR0694`) still appear, marked not compared, and are absent from the Diff count.
+- `STYLE-A` / `SU27` / `HIT` / `4XL` shows **one** row at 4.00 USD.
+- The 5 THB-only groups (`STYLE-D`, `STYLE-E`) still appear, marked not compared, and are absent from the Diff count.
 - The 174 multi-USD-amount groups still show one row per distinct amount.
 - No new files in the repo; `README.md` and `auth_ad.py` untouched.
 

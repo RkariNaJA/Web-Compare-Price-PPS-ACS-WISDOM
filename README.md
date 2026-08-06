@@ -133,7 +133,7 @@ SEASON_YEAR  +  STYLE  +  COLOR  +  ORIG_SIZE_DATA  +  LOCAL_QUOTE_AMOUNT
 
 ### Currency twins run BEFORE de-duplication (added 2026-08-06)
 
-`dbo.PPS` quotes the same price **once per currency**. `HJ3792` / `SU27` / `HIT` / `4XL` held **3.71 USD** and **115.84 THB** — the same price at a ~31 rate. Because `LOCAL_QUOTE_AMOUNT` is deliberately part of the de-dup key (above), the two amounts looked like two different quotes and **both survived to the results table** as a phantom duplicate.
+`dbo.PPS` quotes the same price **once per currency**. `STYLE-A` / `SU27` / `HIT` / `4XL` held **4.00 USD** and **124.00 THB** — the same price at a ~31 rate. Because `LOCAL_QUOTE_AMOUNT` is deliberately part of the de-dup key (above), the two amounts looked like two different quotes and **both survived to the results table** as a phantom duplicate.
 
 The cause was upstream: `FileSlotPPS.toPPSRows()` projected the payload down to `STRICT_B_COLS`, which kept `LOCAL_QUOTE_AMOUNT` but **dropped `LOCAL_CURRENCY`** — so nothing downstream could tell a currency twin from a genuinely different quote.
 
@@ -151,7 +151,7 @@ The amount is excluded **because it is the very thing that differs between twins
 
 `STRICT_B_COLS` also regained **`INSERT_DATE`**. `dedupePPSRows` has always intended to keep the newest record by that column, but it was being stripped here first, so the tie-break branch was **dead code**. It changes no output today — it only breaks ties between rows with an *identical* amount, and no such rows differ in any displayed field — but the code and its comment both claimed the behaviour.
 
-**Measured on the live DB** (grouped by factory · season · style · colour · size): **4,762** groups hold both currencies (the duplicate), 21,687 are USD-only, **5** are THB-only (styles `II5559`, `IR0694`), and **174** hold two or more genuinely different USD amounts — those still yield one row per amount, unchanged.
+**Measured on the live DB** (grouped by factory · season · style · colour · size): **~4.8k** groups hold both currencies (the duplicate), ~22k are USD-only, **5** are THB-only (styles `STYLE-D`, `STYLE-E`), and **174** hold two or more genuinely different USD amounts — those still yield one row per amount, unchanged.
 
 **Caveat:** `collapsedRows` **includes** `currencyFilteredRows`; they are not disjoint. `rawPPSRows` is summed before the currency pass, so subtract one from the other for a duplicates-only figure — `App.tsx` does exactly that when building the Validate toast.
 
@@ -915,21 +915,21 @@ Function: `expand_colorway_rows(base_row, colorway_idx)` — if `ColorwayCode` h
 **Codes starting `ALL_` are NOT split (fixed 2026-08-06).** `ALL_SOLID`, `ALL_AOP`, `ALL_HTR`, `ALL_011`, `ALL_010`, `ALL_531` are each **one** logical colourway that merely contains an underscore. Splitting them was a real bug:
 
 - `ALL_SOLID` became two rows, `ALL` and `SOLID`, so the join key `all_solid` **never existed** in the ACS index.
-- A PPS row with a blank `COLOR` — which `normalizeJoinKey` folds to `all_solid` — therefore missed its exact match, fell through to the no-colour fallback, and could take a **specific colour's FOB**. Style **IR7874 showed 4.72 (colourway 084) instead of 3.83 (ALL_SOLID)**.
+- A PPS row with a blank `COLOR` — which `normalizeJoinKey` folds to `all_solid` — therefore missed its exact match, fell through to the no-colour fallback, and could take a **specific colour's FOB**. Style **STYLE-B showed 6.00 (colourway 084) instead of 5.00 (ALL_SOLID)**.
 - Worse, `SELECT *` has no `ORDER BY`, so *which* colour it grabbed was not even deterministic between loads.
 
 It also un-broke `normalizeJoinKey` in the frontend, which already folds `all_htr` and `all_aop` into `all_solid` — folding that could never fire while those values were being split apart here first.
 
 | ColorwayCode | Rows in `dbo.ACS` | Behaviour |
 | ------------ | ----------------- | --------- |
-| `ALL_SOLID` | 1,370 | one row |
+| `ALL_SOLID` | ~1.4k | one row |
 | `ALL_AOP` | 152 | one row |
 | `ALL_HTR` | 14 | one row |
 | `ALL_011` · `ALL_010` · `ALL_531` | 1 each | one row |
 | `ALLSOLID` | 2 | one row (no underscore — never split) |
 | `011_066`, `006_010_065_323_410`, `PHT_PHV_PC2_PC1_PC3`, … | ~104 | **split**, one row per code |
 
-Impact when this shipped: the ACS payload dropped from **3,811 to 2,272 rows** (exactly the 1,539 `ALL_*` rows no longer split), and **2 rows moved Diff → Match**. 55 (season, style, factory) groups hold both `ALL_SOLID` and a specific colour — those were the ones at risk of a wrong FOB.
+Impact when this shipped: the ACS payload dropped from **~3.8k to ~2.3k rows** (exactly the ~1.5k `ALL_*` rows no longer split), and **2 rows moved Diff → Match**. 55 (season, style, factory) groups hold both `ALL_SOLID` and a specific colour — those were the ones at risk of a wrong FOB.
 
 Known gap: **`ALLSOLID`** (no underscore, 2 rows) still won't match a blank-`COLOR` PPS row, because `normalizeJoinKey` folds `''`, `all_htr`, `all_aop`, `retail` and `solid1` into `all_solid` — but not `allsolid`.
 
@@ -1752,7 +1752,7 @@ The Flask backend is currently open. Before deploying anywhere but a laptop, at 
 
 ### A row shows the wrong ACS FOB — another colour's price
 
-Symptom: a PPS row with a blank `COLOR` displays the FOB of a *specific* colourway. Reported as style `IR7874` showing **4.72** (colourway `084`) instead of **3.83** (`ALL_SOLID`).
+Symptom: a PPS row with a blank `COLOR` displays the FOB of a *specific* colourway. Reported as style `STYLE-B` showing **6.00** (colourway `084`) instead of **5.00** (`ALL_SOLID`).
 
 1. Check the ACS preview. If a style appears **twice** with `ColorwayCode` `ALL` and `SOLID`, `expand_colorway_rows` is splitting `ALL_SOLID` — the backend is running code from before 2026-08-06. See [§4.3](#43-colorwaycode-row-expansion).
 2. Confirm on the server: `findstr /C:"COLORWAY_NO_SPLIT_PREFIX" sql_backend.py` → 2 hits means the fix is present.
@@ -1762,7 +1762,7 @@ If `ALL_SOLID` is intact and the FOB is still wrong, the colourway genuinely dif
 
 ### Two rows for the same style, size and factory with wildly different PPS FOB
 
-One will be ~31× the other (e.g. `3.71` and `115.84`) — that is USD vs THB for the **same** quote. The fix is `preferUSDRows` (see the [currency section](#currency-twins-run-before-de-duplication-added-2026-08-06)); if you still see both, the **frontend** is stale. Rebuild with `npm run build` and copy the whole `frontend/dist/` folder, deleting the server's old one first — Vite hashes filenames, so merging leaves stale bundles behind.
+One will be ~31× the other (e.g. `4.00` and `124.00`) — that is USD vs THB for the **same** quote. The fix is `preferUSDRows` (see the [currency section](#currency-twins-run-before-de-duplication-added-2026-08-06)); if you still see both, the **frontend** is stale. Rebuild with `npm run build` and copy the whole `frontend/dist/` folder, deleting the server's old one first — Vite hashes filenames, so merging leaves stale bundles behind.
 
 Genuinely different **USD** amounts for one style/size are *not* a bug: 174 groups have revised quotes, and each keeps its own row and its own verdict.
 

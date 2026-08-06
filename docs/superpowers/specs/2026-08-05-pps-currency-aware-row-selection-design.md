@@ -9,14 +9,14 @@
 ## The bug
 
 After Validate, one logical quote can appear as **two rows** with wildly different "PPS FOB"
-values. Reported case — `HJ3792` / `SU27` / `HIT` / size `4XL`:
+values. Reported case — `STYLE-A` / `SU27` / `HIT` / size `4XL`:
 
 | Rows in `dbo.PPS` | `LOCAL_CURRENCY` | `LOCAL_QUOTE_AMOUNT` |
 | ----------------- | ---------------- | -------------------- |
-| 4 | USD | 3.71 |
-| 2 | THB | 115.84 |
+| 4 | USD | 4.00 |
+| 2 | THB | 124.00 |
 
-`115.84 ÷ 3.71 = 31.2` — the THB/USD rate. **They are the same price quoted twice.** The
+`124.00 ÷ 4.00 = 31.2` — the THB/USD rate. **They are the same price quoted twice.** The
 source data is not duplicated; the output table is.
 
 ## Root cause
@@ -30,7 +30,7 @@ Three steps, each behaving exactly as written:
    The currency is destroyed here, and nothing downstream can recover it.
 3. **`dedupePPSRows` (`comparison.ts:109-136`)** keys on
    `SEASON_YEAR | STYLE | COLOR | ORIG_SIZE_DATA | LOCAL_QUOTE_AMOUNT`. Because
-   `3.71 ≠ 115.84` these are two distinct keys, so both survive — which is deliberate
+   `4.00 ≠ 124.00` these are two distinct keys, so both survive — which is deliberate
    (`comparison.ts:99-101`: rows with a different quote can have a different verdict).
 
 So the dedup is correct and the backend is correct. **Step 2 is the defect**: it throws away the
@@ -45,15 +45,15 @@ Grouped by `FTYCODE · SEASON_YEAR · STYLE · COLOR · SIZE_DATA`:
 
 | Case | Groups |
 | ---- | ------ |
-| Both USD and THB — **the duplicate** | **4,762** |
-| USD only | 21,687 |
+| Both USD and THB — **the duplicate** | **~4.8k** |
+| USD only | ~22k |
 | THB only (no USD twin) | **5** |
 | 2+ *distinct* USD amounts (revised quotes) | 174 |
 
-Raw rows: 108,565 USD · 6,807 THB. Only these two currencies exist in the table.
+Raw rows: ~109k USD · ~6.8k THB. Only these two currencies exist in the table.
 
-The 5 THB-only groups are 2 real styles: `II5559` (`SP27`/`HIT`, sizes `S-T`/`M-T`/`L-T`, 439.06)
-and `IR0694` (`SP27`/`HIT`, blank size 593.13 and `3XL` 652.44). A blanket
+The 5 THB-only groups are 2 real styles: `STYLE-D` (`SP27`/`HIT`, sizes `S-T`/`M-T`/`L-T`, 500.00)
+and `STYLE-E` (`SP27`/`HIT`, blank size 600.00 and `3XL` 650.00). A blanket
 `WHERE LOCAL_CURRENCY = 'USD'` would erase these from validation with no trace — which is why
 this design prefers rather than filters.
 
@@ -124,8 +124,8 @@ dropped from that group; otherwise the group is kept intact.
 
 ```ts
 // dbo.PPS quotes the same price once per currency (USD and THB today), so a single
-// logical quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 3.71 USD and
-// 115.84 THB are the same price. Collapse to the preferred currency per
+// logical quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 4.00 USD and
+// 124.00 THB are the same price. Collapse to the preferred currency per
 // (season, style, color, size) group; groups with NO preferred-currency row are left
 // alone so a THB-only quote still reaches the table (marked not-comparable downstream).
 // Returns the rows unchanged when LOCAL_CURRENCY is absent (a non-DB source).
@@ -194,7 +194,7 @@ not-compared rows are **excluded** from it.
 **Report currency filtering separately from dedup.** `collapsedRows` (`comparison.ts:498`) is
 `rawPPSRows - compRows.length` and is presented to the user as de-duplication. Currency-filtered
 rows would silently inflate it. Add a separate `currencyFilteredRows` count so the toast can say
-*"4,762 non-USD rows excluded"* rather than disguising the filtering as dedup.
+*"~4.8k non-USD rows excluded"* rather than disguising the filtering as dedup.
 
 ### 3. `frontend/src/lib/summary.ts` and `frontend/src/lib/csv.ts`
 
@@ -216,8 +216,8 @@ rows would silently inflate it. Add a separate `currencyFilteredRows` count so t
 
 | Case | Groups | Before | After |
 | ---- | ------ | ------ | ----- |
-| USD + THB twins | 4,762 | 2 rows; THB row a false Diff | **1 row** (USD) |
-| USD only | 21,687 | unchanged | unchanged |
+| USD + THB twins | ~4.8k | 2 rows; THB row a false Diff | **1 row** (USD) |
+| USD only | ~22k | unchanged | unchanged |
 | THB only | 5 | 1 row, false Diff | 1 row, **not compared** |
 | 2+ distinct USD amounts | 174 | one row per amount | unchanged |
 

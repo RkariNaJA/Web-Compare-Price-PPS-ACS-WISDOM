@@ -276,23 +276,23 @@ const cs = await load('costsheet');
 // Build one 30-cell row using REAL_HEADERS positions.
 function mkRow({ size, finalFob, extFob, date, version = '1', csNo = 'CS-1' }) {
   const r = new Array(REAL_HEADERS.length).fill('');
-  r[3] = 'HIT'; r[4] = 'FA27'; r[5] = 'HV8429'; r[7] = 'ALL_SOLID';
+  r[3] = 'HIT'; r[4] = 'FA27'; r[5] = 'STYLE-C'; r[7] = 'ALL_SOLID';
   r[9] = size; r[11] = version; r[16] = finalFob; r[18] = extFob;
   r[23] = csNo; r[25] = date;
   return r;
 }
-const KEY = 'fa27|hv8429|all_solid|hit';
-const KEY_NC = 'fa27|hv8429|hit';
+const KEY = 'fa27|style-c|all_solid|hit';
+const KEY_NC = 'fa27|style-c|hit';
 const look = (rows, ppsSize) =>
   cs.lookupCostsheet(cs.buildCostsheetIndex({ name: 't', headers: REAL_HEADERS, rows }), ppsSize, KEY, KEY_NC);
 
-// T3.1 extended row uses Extended Size FOB (2.61), NOT Final FOB (2.37)
-let r = look([mkRow({ size: '3XL', finalFob: '2.37', extFob: '2.61', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
-check('T3.1 extended uses ext FOB', [r.matched, r.fobVal, r.sizeNorm], [true, '2.61', 'ALL_EXTEND_SIZE_RB']);
+// T3.1 extended row uses Extended Size FOB (3.60), NOT Final FOB (3.30)
+let r = look([mkRow({ size: '3XL', finalFob: '3.30', extFob: '3.60', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
+check('T3.1 extended uses ext FOB', [r.matched, r.fobVal, r.sizeNorm], [true, '3.60', 'ALL_EXTEND_SIZE_RB']);
 
 // T3.2 regular row still uses Final FOB — existing behaviour must not change
-r = look([mkRow({ size: 'S', finalFob: '2.04', extFob: '2.24', date: '2026-01-15' })], 'ALL_REG_SIZE_RB');
-check('T3.2 regular uses Final FOB', [r.matched, r.fobVal, r.sizeNorm], [true, '2.04', 'ALL_REG_SIZE_RB']);
+r = look([mkRow({ size: 'S', finalFob: '3.00', extFob: '3.20', date: '2026-01-15' })], 'ALL_REG_SIZE_RB');
+check('T3.2 regular uses Final FOB', [r.matched, r.fobVal, r.sizeNorm], [true, '3.00', 'ALL_REG_SIZE_RB']);
 
 // T3.3 the 4X / 48 regression — now extended, so ext FOB
 for (const s of ['4X', '48']) {
@@ -301,33 +301,33 @@ for (const s of ['4X', '48']) {
 }
 
 // T3.4 extended row with EMPTY ext FOB -> unmatched (blank + "No WISDOM")
-r = look([mkRow({ size: '3XL', finalFob: '2.37', extFob: '', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
+r = look([mkRow({ size: '3XL', finalFob: '3.30', extFob: '', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
 check('T3.4 empty ext FOB -> No CS', [r.matched, r.fobVal], [false, '']);
 
 // T3.5 newest extended row empty, older one populated -> still No CS (MAX-date rule holds)
 r = look([
-  mkRow({ size: '3XL', finalFob: '2.37', extFob: '',     date: '2026-06-01', version: '2' }),
+  mkRow({ size: '3XL', finalFob: '3.30', extFob: '',     date: '2026-06-01', version: '2' }),
   mkRow({ size: '3XL', finalFob: '2.30', extFob: '2.55', date: '2026-01-15', version: '1' }),
 ], 'ALL_EXTEND_SIZE_RB');
 check('T3.5 newest empty wins -> No CS', [r.matched, r.fobVal], [false, '']);
 
 // T3.6 REGULAR row with empty Final FOB keeps today's behaviour (matched, blank)
-r = look([mkRow({ size: 'S', finalFob: '', extFob: '2.24', date: '2026-01-15' })], 'ALL_REG_SIZE_RB');
+r = look([mkRow({ size: 'S', finalFob: '', extFob: '3.20', date: '2026-01-15' })], 'ALL_REG_SIZE_RB');
 check('T3.6 regular empty FOB unchanged', [r.matched, r.fobVal], [true, '']);
 
 // T3.7 bare ALL_EXTEND_SIZE (no _RB suffix) still reaches the extended branch
-r = look([mkRow({ size: 'ALL_EXTEND_SIZE', finalFob: '2.37', extFob: '2.61', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
-check('T3.7 bare ALL_EXTEND_SIZE', [r.matched, r.fobVal, r.sizeNorm], [true, '2.61', 'ALL_EXTEND_SIZE_RB']);
+r = look([mkRow({ size: 'ALL_EXTEND_SIZE', finalFob: '3.30', extFob: '3.60', date: '2026-01-15' })], 'ALL_EXTEND_SIZE_RB');
+check('T3.7 bare ALL_EXTEND_SIZE', [r.matched, r.fobVal, r.sizeNorm], [true, '3.60', 'ALL_EXTEND_SIZE_RB']);
 
 // T3.8 view without the column -> warned in `missing`, extended rows unmatched
 const hdrNoExt = REAL_HEADERS.filter((h) => h !== 'Extended Size FOB');
 function mkRowNoExt(size, finalFob, date) {
   const r2 = new Array(hdrNoExt.length).fill('');
-  r2[3] = 'HIT'; r2[4] = 'FA27'; r2[5] = 'HV8429'; r2[7] = 'ALL_SOLID';
+  r2[3] = 'HIT'; r2[4] = 'FA27'; r2[5] = 'STYLE-C'; r2[7] = 'ALL_SOLID';
   r2[9] = size; r2[16] = finalFob; r2[24] = date;
   return r2;
 }
-const idxNoExt = cs.buildCostsheetIndex({ name: 't', headers: hdrNoExt, rows: [mkRowNoExt('3XL', '2.37', '2026-01-15')] });
+const idxNoExt = cs.buildCostsheetIndex({ name: 't', headers: hdrNoExt, rows: [mkRowNoExt('3XL', '3.30', '2026-01-15')] });
 check('T3.8 missing column is warned', idxNoExt.missing.some((s) => s.includes('Extended Size FOB')), true);
 const rNoExt = cs.lookupCostsheet(idxNoExt, 'ALL_EXTEND_SIZE_RB', KEY, KEY_NC);
 check('T3.8 extended unmatched without column', [rNoExt.matched, rNoExt.fobVal], [false, '']);
@@ -343,7 +343,7 @@ check('T3.9 MAX date wins', [r.matched, r.fobVal, r.dateStr], [true, '5.55', '20
 - [ ] **Step 2: Run the harness to verify it fails**
 
 Same command as Task 1 Step 2.
-Expected: FAIL on `T3.1` (`actual [true,"2.37",...]` — the current bug), `T3.3` (`"9.99"`), `T3.4`/`T3.5` (`[true,"2.37"]`), `T3.7` (`"2.37"`), and both `T3.8` assertions. `T3.2`, `T3.6`, `T3.9` should already PASS.
+Expected: FAIL on `T3.1` (`actual [true,"3.30",...]` — the current bug), `T3.3` (`"9.99"`), `T3.4`/`T3.5` (`[true,"3.30"]`), `T3.7` (`"3.30"`), and both `T3.8` assertions. `T3.2`, `T3.6`, `T3.9` should already PASS.
 
 - [ ] **Step 3: Implement the FOB source switch**
 

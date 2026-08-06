@@ -325,7 +325,7 @@ def expand_colorway_rows(base_row: list, colorway_idx: int) -> list[list]:
     `all_solid` never existed in the ACS index. A PPS row with a blank COLOR (which the
     frontend normalises to `all_solid`) therefore missed its exact match, fell through to
     the no-colour fallback, and could take a *specific* colour's FOB instead — style
-    IR7874 showed 4.72 from colourway 084 rather than 3.83 from ALL_SOLID. Because
+    STYLE-B showed 6.00 from colourway 084 rather than 5.00 from ALL_SOLID. Because
     `SELECT *` has no ORDER BY, which colour it grabbed was not even deterministic.
 
     This also un-breaks `normalizeJoinKey` in the frontend, which already folds `all_htr`

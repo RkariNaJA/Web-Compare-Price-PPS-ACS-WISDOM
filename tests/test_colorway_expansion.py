@@ -4,7 +4,7 @@ The bug these pin down: 'ALL_SOLID' was being split into two rows, 'ALL' and 'SO
 because it contains an underscore. That destroyed the `all_solid` join key, so a PPS row
 with a blank COLOR (which the frontend normalises to `all_solid`) missed its exact match,
 fell through to the no-colour fallback, and could take a *specific* colour's FOB instead.
-Style IR7874 showed 4.72 (colourway 084) rather than 3.83 (ALL_SOLID).
+Style STYLE-B showed 6.00 (colourway 084) rather than 5.00 (ALL_SOLID).
 
 Real multi-code lists like '011_066' must still split.
 """
@@ -15,7 +15,7 @@ CW = 2
 
 
 def row(colorway, fob="1.00"):
-    return ["SU27", "IR7874", colorway, "HIT", "CBDID", fob]
+    return ["SU27", "STYLE-B", colorway, "HIT", "CBDID", fob]
 
 
 def colorways(result):
@@ -59,10 +59,10 @@ def test_five_code_list_splits():
 
 
 def test_split_preserves_every_other_column():
-    result = sql_backend.expand_colorway_rows(row("011_066", fob="4.72"), CW)
+    result = sql_backend.expand_colorway_rows(row("011_066", fob="6.00"), CW)
     assert len(result) == 2
     for r in result:
-        assert r[0] == "SU27" and r[1] == "IR7874" and r[3] == "HIT" and r[5] == "4.72"
+        assert r[0] == "SU27" and r[1] == "STYLE-B" and r[3] == "HIT" and r[5] == "6.00"
 
 
 def test_alphanumeric_codes_split():
