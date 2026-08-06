@@ -36,6 +36,7 @@ def clean_username(username):
 
 
 # ── Active Directory ─────────────────────────────────────────────────────────
+# WHERE WE CONNECT TO AD
 def create_ad_server():
     """Build the ldap3 Server object for AD from the AD_* env settings (host, port, TLS)."""
     from ldap3 import NONE, Server, Tls

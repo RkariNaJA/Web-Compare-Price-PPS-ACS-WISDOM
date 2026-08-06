@@ -2,7 +2,82 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-07-31 · **Original author / design contact:** admin@example.com
+**Last updated:** 2026-08-06 · **Original author / design contact:** admin@example.com
+
+---
+
+## 📌 CORE LOGIC — read this before changing anything
+
+Everything the app does, in one page. Each rule links to its full section. **Order of operations is the whole game** — most bugs found so far were one step running before or after the step it depended on.
+
+### What it answers
+
+> For every PPS quote row: does `LOCAL_QUOTE_AMOUNT` equal **both** the ACS FOB **and** the WISDOM Costsheet FOB?
+
+Three sources, all read-only: **ACS** (`dbo.ACS`) · **PPS** (`dbo.PPS`) · **Costsheet/WISDOM** (`dbo.VIEW_COSTSHEET_WISDOM`). The only thing the app ever writes is `annotations.db` (Error From / Done, groups, logs).
+
+### The pipeline, in order
+
+```
+BACKEND  sql_backend.py                     ── SELECT *, no ORDER BY (row order is NOT stable)
+  1  stringify every cell, NULL → ""
+  2  append EXTRACTED_SIZE   (last 2 dash-segments of CBDID → ALL_REG_SIZE_RB)      §4.2
+  3  expand_colorway_rows    split 011_066 → 2 rows · ALL_* NEVER split             §4.3
+
+FRONTEND  load (FileSlotPPS / FileSlotACS / FileSlotCostsheet)
+  4  keep only STRICT_B_COLS                                                        §3.2
+  5  stash raw size in ORIG_SIZE_DATA, overwrite SIZE_DATA with the bucket          §6.2
+
+FRONTEND  Validate (comparison.ts → runComparison)
+  6  preferUSDRows      collapse USD/THB twins   ← BEFORE dedup                      ↑ top
+  7  dedupePPSRows      collapse quote history   ← key INCLUDES the amount           ↑ top
+  8  build ACS index    by Season|Style|Colour|Factory (+ a no-colour variant)      §6.1
+  9  per PPS row → pick ACS row (5-tier size fallback)                              §6.3
+ 10  pick ACS FOB column: FinalFOB vs ExtSzFOB                                       §6.4
+ 11  pick Costsheet row: MAX First Input Date *within the size-matched subset*      §6.5
+ 12  pick Costsheet FOB column: Final FOB vs Extended Size FOB                       §6.5
+ 13  verdictOf(row) → match | diff | noKey | notCompared                             §6.6
+```
+
+### The ten rules that actually matter
+
+| # | Rule | Why it exists |
+| - | ---- | ------------- |
+| 1 | **Join key = Season + Style + Colour + Factory.** Size is *not* in the key — it picks the row afterwards. | Sizes are buckets, not identities |
+| 2 | **Blank colour → `all_solid`.** So do `ALL_HTR`, `ALL_AOP`, `RETAIL`, `SOLID1`. | PPS leaves colour blank for solids |
+| 3 | **`ALL_*` colourways are ONE code, never split.** | Splitting `ALL_SOLID` destroyed the `all_solid` key → rows took another colour's FOB |
+| 4 | **De-dup key uses `ORIG_SIZE_DATA`, never `SIZE_DATA`.** | Keying the bucket merges 3XL/4XL/5XL and sizes vanish |
+| 5 | **De-dup key includes `LOCAL_QUOTE_AMOUNT`.** Different price = separate row. | A different price can be a different verdict |
+| 6 | **Currency twins collapse *before* de-dup**, grouped **without** the amount. | The amount is what differs between USD/THB twins |
+| 7 | **ACS has two FOB columns** — `FinalFOB` when the size matches, `ExtSzFOB` when it fell back. | One ACS row covers several sizes |
+| 8 | **Costsheet has two FOB columns too**, chosen by the *Costsheet row's own size*, not the PPS size. | WISDOM is one row per size; ACS is one row with two columns |
+| 9 | **MAX(First Input Date) is computed *within* the size-matched subset**, not across all candidates. | Otherwise a newer XL record beats the S record you asked for |
+| 10 | **Derive verdicts with `verdictOf()`.** Never re-implement it. | It was copied in 4 places; a 4th state couldn't be added consistently |
+
+### Landmines — every one of these has actually bitten
+
+- **A skipped comparison looks like a failed one.** `notCompared` needed neutral handling in *four* separate places (badge, ACS cell tint, WISDOM cell, Summary donut). A clean build caught none of them. Adding a verdict? Audit every branch on `valueMatch`, `cMatch`, `lqVsAcs`, `!isMatch`. §6.6
+- **`serve.py` never hot-reloads.** Waitress loads the module once. A corrected `.py` on disk changes nothing until restart. Cost 21 minutes once.
+- **`dist/` is compiled output.** Editing `frontend/src/` does nothing to a running server until `npm run build` *and* the folder is copied. Delete the old `dist/` first — Vite hashes filenames, so merging leaves stale bundles.
+- **`annotations.db` is data, not code.** Annotations, groups **and** logs live in that one file. It is per-machine and gitignored. **Never copy it between machines** — it overwrites the target's history.
+- **`collapsedRows` *includes* `currencyFilteredRows`.** They are not disjoint; subtract for a duplicates-only figure.
+- **`SELECT *` has no `ORDER BY`.** Never rely on ACS/PPS row order; ties must be broken explicitly.
+- **`normalizeSizeToken` ≠ `normalizeCostsheetSizeToken`.** The Costsheet one checks EXTEND first, so `4X` and `48` (in *both* size lists) resolve differently. It decides the FOB *column* only — never the matching key.
+- **Two verdict namings.** `verdictOf` returns camelCase (`noKey`), `FilterCategory` is lowercase (`nokey`). A cast compiles and silently filters nothing.
+
+### Where the logic lives
+
+| Concern | File |
+| ------- | ---- |
+| SQL reads, size extraction, colourway expansion | `sql_backend.py` §4 |
+| Column config, size lists, `PREFERRED_CURRENCY` | `frontend/src/lib/constants.ts` |
+| Key / size / date normalisation | `frontend/src/lib/normalize.ts` |
+| **The comparison itself + `verdictOf`** | `frontend/src/lib/comparison.ts` §6 |
+| Costsheet index + MAX-date lookup | `frontend/src/lib/costsheet.ts` §6.5 |
+| Verdict counts for the Summary tab | `frontend/src/lib/summary.ts` |
+| Auth, groups, permissions, logs | `auth_ad.py`, `groups_db.py`, `logs_db.py` 🔐 |
+
+Full file-by-file map: [§0](#0-file-map--which-file-does-what) · Task → file lookup: [§0.7](#07-i-want-to-change-x--open-y)
 
 ---
 
@@ -56,6 +131,30 @@ SEASON_YEAR  +  STYLE  +  COLOR  +  ORIG_SIZE_DATA  +  LOCAL_QUOTE_AMOUNT
 
 **Per-factory impact:** HIT 76,932 → 23,036 · HTV 19,435 → 3,615 · HIC 11,274 → 2,293 · HSN 778 → 185.
 
+### Currency twins run BEFORE de-duplication (added 2026-08-06)
+
+`dbo.PPS` quotes the same price **once per currency**. `HJ3792` / `SU27` / `HIT` / `4XL` held **3.71 USD** and **115.84 THB** — the same price at a ~31 rate. Because `LOCAL_QUOTE_AMOUNT` is deliberately part of the de-dup key (above), the two amounts looked like two different quotes and **both survived to the results table** as a phantom duplicate.
+
+The cause was upstream: `FileSlotPPS.toPPSRows()` projected the payload down to `STRICT_B_COLS`, which kept `LOCAL_QUOTE_AMOUNT` but **dropped `LOCAL_CURRENCY`** — so nothing downstream could tell a currency twin from a genuinely different quote.
+
+`preferUSDRows()` in `comparison.ts` now runs **immediately before** `dedupePPSRows()` and collapses each group to the preferred currency:
+
+```
+group key = SEASON_YEAR + STYLE + COLOR + ORIG_SIZE_DATA      ← note: NO amount
+```
+
+The amount is excluded **because it is the very thing that differs between twins**.
+
+- Group contains a `PREFERRED_CURRENCY` (`'USD'`, in `constants.ts`) row → other currencies are dropped from that group.
+- Group has **no** USD row → passes through **untouched**, so a THB-only quote still reaches the table. It is flagged `comparable: false` and gets the fourth verdict **Not Compared** — its FOB comparison is *skipped*, not performed and failed, so it never inflates the Diff count.
+- No `LOCAL_CURRENCY` column at all (an uploaded spreadsheet) → rows returned unchanged, exactly as before.
+
+`STRICT_B_COLS` also regained **`INSERT_DATE`**. `dedupePPSRows` has always intended to keep the newest record by that column, but it was being stripped here first, so the tie-break branch was **dead code**. It changes no output today — it only breaks ties between rows with an *identical* amount, and no such rows differ in any displayed field — but the code and its comment both claimed the behaviour.
+
+**Measured on the live DB** (grouped by factory · season · style · colour · size): **4,762** groups hold both currencies (the duplicate), 21,687 are USD-only, **5** are THB-only (styles `II5559`, `IR0694`), and **174** hold two or more genuinely different USD amounts — those still yield one row per amount, unchanged.
+
+**Caveat:** `collapsedRows` **includes** `currencyFilteredRows`; they are not disjoint. `rawPPSRows` is summed before the currency pass, so subtract one from the other for a duplicates-only figure — `App.tsx` does exactly that when building the Validate toast.
+
 ---
 
 ## 🔐 VERY IMPORTANT — Authentication (AD login + session): how it actually works
@@ -79,6 +178,77 @@ SEASON_YEAR  +  STYLE  +  COLOR  +  ORIG_SIZE_DATA  +  LOCAL_QUOTE_AMOUNT
 5. Every data endpoint returns **401 (refuses)** unless that cookie is present.
 6. Once in, **what you can do** (view only, save, or administer groups) depends on your
    **app-group permissions** — see "Per-group roles" below.
+
+### The simplest version — who actually checks the password
+
+**The dashboard never checks your password. It borrows it and tries to log in to AD with it.**
+If AD lets it in, the password was right. That's the whole idea.
+
+> **Like a doorman testing your key.** You tell him your name and hand him your key. He doesn't
+> inspect the key — he walks to your door and **tries it in the lock**. Opens → he lets you in.
+> Doesn't open → he turns you away. He never learns what your key is shaped like; he only finds out
+> whether it works. AD is the lock. Trying the key in the lock is called a **bind**, and it is the
+> only step that matters — everything else is small talk.
+
+So there is **no password comparison anywhere in our code**. Nothing is stored, nothing is hashed,
+nothing is compared. We ask AD a yes/no question and believe the answer.
+
+**When do we talk to AD?** Only at the moment someone clicks Sign In (`POST /login`). Not at server
+startup, not in the background. Each login opens a connection, asks, and hangs up — like making a
+phone call, not like leaving a line open. There is no connection pool and no long-lived session
+against AD.
+
+**What happens, in order** (all of it in `auth_ad.py`):
+
+| # | Step                                        | Function              | Talks to AD? |
+| - | ------------------------------------------- | --------------------- | ------------ |
+| 1 | Read AD's address from `.env`               | `create_ad_server()`  | No — just builds an address object |
+| 2 | Phone AD, **turn on encryption**, **try to log in as the user** | **`bind_ad_user()`** | **Yes — this IS the password check** |
+| 3 | Now inside, ask "who is this, what groups?" | `read_ad_profile()`   | Yes — one LDAP search |
+| 4 | Check those groups against our allow-list   | `is_group_allowed()`  | No — plain text matching |
+| 5 | Hang up                                     | `connection.unbind()` | Yes — in a `finally`, always runs |
+
+Only **two lines in the whole project touch the network**: the `Connection(...)` in `bind_ad_user()`
+(the connect + StartTLS + bind) and the `connection.search(...)` in `read_ad_profile()`. Step 1 is
+the one people mistake for "connecting" — it isn't; it just writes down the address.
+
+**No service account.** Because we bind as the user, we're already authenticated — so the very same
+connection is reused to read their groups. That's why `.env` holds no bind DN and no bind password:
+there is no extra credential to configure, and none to rotate later.
+
+**Why port 389 when we said it's encrypted?** Two ways exist to encrypt LDAP, and we use the second:
+
+| Way          | Port | How it works                                                              |
+| ------------ | ---- | ------------------------------------------------------------------------- |
+| LDAPS        | 636  | Encrypted from the very first byte (`AD_USE_SSL=true`)                    |
+| **StartTLS** | 389  | Starts plain, then **upgrades to encrypted before anything secret is sent** (`AD_START_TLS=true`) |
+
+389 is normally the *unencrypted* port, which is why the config looks wrong at a glance. It's fine —
+the upgrade happens before the password is sent.
+
+### Three things this does NOT mean
+
+Easy to over-read "AD decides". Three limits, and two of them are go-live items:
+
+1. **AD is not the only way in.** The **local account is tried first**, before AD is contacted at
+   all — so while `LOCAL_AUTH_ENABLED=true`, one login bypasses AD entirely. Intended for offline
+   dev; **set `false` before real users** (go-live item A4).
+2. **AD says "this person is real", not "this person is allowed."** A second gate follows:
+   `AD_ALLOWED_GROUPS`. **Empty means allow everyone** — i.e. anyone with a working account anywhere
+   in the domain can sign in, not just your team. That may be exactly what you want; just make it a
+   deliberate decision rather than a default.
+3. **AD does not decide what you can _do_.** Identity and permissions are separate systems here:
+
+| Question                        | Who decides                                     |
+| ------------------------------- | ----------------------------------------------- |
+| Are you really who you claim?   | **Active Directory**                            |
+| May you log in at all?          | `AD_ALLOWED_GROUPS` (empty = everyone)          |
+| May you **save** edits?         | **The app's own groups** (`groups_db`) — not AD |
+| May you **administer** groups?  | **The app's own groups** (`groups_db`) — not AD |
+
+The honest one-liner: **AD decides who you are; the app decides what you can touch.** A logged-in
+user in no app group is **read-only**, and `INITIAL_ADMINS` is what gives the first person full
+rights before any groups exist. See "Per-group roles" below.
 
 ### The two "hops" — this is the part people confuse
 
@@ -371,6 +541,7 @@ Frontend + backend become the **same origin** → the session cookie just works 
 
 ## Table of Contents
 
+0. [File Map — which file does what](#0-file-map--which-file-does-what)
 1. [Purpose & Business Context](#1-purpose--business-context)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Data Sources](#3-data-sources)
@@ -388,6 +559,125 @@ Appendices: [A — File-level comment map](#appendix-a--file-level-comment-map) 
 
 ---
 
+## 0. File Map — which file does what
+
+**TL;DR:** One line per file, whole project, in one place. Backend is Python in `DashBoard/`; frontend is React/TypeScript in `DashBoard/frontend/src/`. If you only remember one rule: **pure logic lives in `frontend/src/lib/`, all React state lives in `App.tsx`, and every HTTP route lives in `sql_backend.py`.**
+
+Deeper write-ups for each area: backend → [§4.0](#40-backend-files-infrastructure) · frontend → [§5.2](#52-file-infrastructure-for-frontend) · suggested reading order → [Appendix A](#appendix-a--file-level-comment-map).
+
+### 0.1 Backend — `DashBoard/*.py`
+
+| File                  | What it does                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `sql_backend.py`      | **The Flask app — every HTTP route.** Auth, data endpoints, annotations, groups, admin logs. Session/CORS config, the three access guards, and the SQL Server connection helper. This is the file you run in dev. |
+| `serve.py`            | **Production entry point.** Imports `app` from `sql_backend` and serves it under waitress. Use this on a server, not `python sql_backend.py`. Host/port/threads come from `SERVE_*` env vars. |
+| `auth_ad.py`          | **Password check only** — no Flask, no DB. Local dev account → Active Directory bind → `AD_ALLOWED_GROUPS` policy. Returns a plain user dict. |
+| `annotations_db.py`   | SQLite store for the **Error From / Done** columns. `save()` upserts and also returns the change diffs the audit log records. |
+| `groups_db.py`        | SQLite store for the **app's own groups & permissions**. `resolve_perms(username)` runs at login (most-permissive wins; no group = read-only). |
+| `logs_db.py`          | SQLite store for the **admin Log page** — presence, login events, change history. Append-only, UTC timestamps, Sunday–Saturday weeks. |
+| `annotations.db`      | The **one SQLite file** all three `*_db.py` modules share (WAL). Everything the app persists locally. Backup = copy this file. Gitignored. |
+| `requirements.txt`    | Runtime deps: Flask, flask-cors, pyodbc, ldap3, python-dotenv, waitress.                                          |
+| `requirements-dev.txt`| Test-only dep: pytest.                                                                                            |
+| `.env`                | **All config + secrets**, gitignored — AD settings, local account, `FLASK_SECRET_KEY`, `INITIAL_ADMINS`, CORS. Never commit. |
+| `.env.example`        | Committed placeholder template — same keys, dummy values. Copy to `.env` and fill in.                             |
+
+### 0.2 Backend tests — `DashBoard/tests/`
+
+| File                          | What it covers                                                          |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `conftest.py`                 | Fixtures: isolated temp DB, Flask test client, `login_as()` session helper. |
+| `test_annotations_db.py`      | Annotation save + change-diff logic.                                     |
+| `test_groups_db.py`           | Groups CRUD + `resolve_perms` rules.                                     |
+| `test_logs_db.py`             | Presence / logins / changes storage.                                     |
+| `test_permissions_routes.py`  | Route guards end-to-end (401 vs 403 vs 200), `/ping`, `/admin/*`.        |
+
+Run: `python -m pytest tests/ -v`
+
+### 0.3 Frontend — domain logic (`frontend/src/lib/`, zero React)
+
+| File            | What it does                                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `comparison.ts` | **The heart of the app.** `runComparison()` — builds the ACS index, walks every de-duplicated PPS row, picks the best ACS row, and emits one verdict row per PPS row. Start here when a row shows the wrong result. |
+| `normalize.ts`  | Atomic helpers: join-key normalisation, size bucketing (`ALL_REG_SIZE_RB` / `ALL_EXTEND_SIZE_RB`), `extractSizeFromCBDID`, date + header parsing. Note **two** size resolvers: `normalizeSizeToken` (shared — PPS/ACS matching) and `normalizeCostsheetSizeToken` (Costsheet FOB-source only; differs for `4X` and `48`). |
+| `constants.ts`  | **Configuration single-source-of-truth** — `KEY_PAIRS` (which ACS column joins which PPS column), `REG_SIZES` / `EXTEND_SIZE`, Costsheet header aliases, file-badge colours, `MAX_B_FILES`. |
+| `costsheet.ts`  | `buildCostsheetIndex` + `lookupCostsheet` — the WISDOM side: the MAX-First-Input-Date winner rule, and the per-row choice between `Final FOB` and `Extended Size FOB`. |
+| `csv.ts`        | `exportComparisonCSV` — the export format (adds Verdict + Diff_Reason).                                                |
+| `summary.ts`    | Match / Diff / No-Key aggregation behind the Validation Summary tab.                                                   |
+| `api.ts`        | The only file that talks to the backend — ACS/Costsheet/PPS fetches, auth, group-admin calls.                          |
+| `types.ts`      | Shared TypeScript types (`TableData`, `PPSFile`, `CompRow`, …). Read this first to understand the data shapes.         |
+
+### 0.4 Frontend — React (`frontend/src/`)
+
+| File                            | What it does                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| `main.tsx`                      | ReactDOM mount. You will almost never touch it.                                     |
+| `App.tsx`                       | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
+| `components/Header.tsx`         | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
+| `components/UploadStrip.tsx`    | Composes the three file slots below.                                                |
+| `components/FileSlotACS.tsx`    | Loads `dbo.ACS` from the backend.                                                   |
+| `components/FileSlotPPS.tsx`    | Drag-and-drop PPS files, xlsx parsing, column strip-down, size normalisation.       |
+| `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                 |
+| `components/PreviewTable.tsx`   | Shared mini preview table used by all three slots.                                  |
+| `components/KeyInfoPanel.tsx`   | Shows the join keys + FOB rules, holds the **Validate** button.                     |
+| `components/ResultsToolbar.tsx` | Stats, search, filter buttons, CSV export, **Save** (disabled for read-only users). |
+| `components/ResultsTable.tsx`   | **The big results grid** with the sticky-right verdict column.                      |
+| `components/SummaryDashboard.tsx` | Validation Summary — Match/Diff/No-Key by factory & season (all users).           |
+| `components/GroupAdmin.tsx`     | Admin screen: create groups, add members, set edit/manage (manager-only).           |
+| `components/LogDashboard.tsx`   | Admin Log page: online-now / logins / change history (manager-only).                |
+| `hooks/useAuth.tsx`             | Auth context — login/logout, calls `/me` on load.                                   |
+| `hooks/useToast.tsx`            | Toast context + provider.                                                           |
+| `hooks/usePresenceHeartbeat.tsx`| Pings `/ping` every 30s while logged in — feeds the "online now" list.               |
+| `styles/tokens.css`             | CSS variables — palette, type scale, spacing. Change the theme here.                |
+| `styles/global.css`             | Component classes.                                                                  |
+
+### 0.5 Frontend — build config (`frontend/`)
+
+| File                    | What it does                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `index.html`            | Vite's HTML entry point.                                                      |
+| `package.json`          | Scripts (`npm run dev` / `build` / `preview`) and dependencies.                |
+| `vite.config.ts`        | Vite config — React plugin, dev server on port 5173, `host: true` so the LAN can reach it. No proxy: the frontend calls the backend directly. |
+| `tsconfig*.json`        | TypeScript strict-mode config.                                                 |
+| `.env`                  | Frontend-only env vars (gitignored). Normally **empty** — leaving `VITE_BACKEND_URL` unset makes the app call port 5001 on whatever host served the page, which survives IP changes. Only set it if the backend runs on a different machine, and re-run `npm run build` after. |
+| `dist/`                 | **Build output** — generated by `npm run build`. Never edit by hand.           |
+| `node_modules/`         | Installed packages. Gitignored.                                               |
+| `README.md`             | Frontend-only quick reference.                                                |
+
+### 0.6 Everything else in `DashBoard/`
+
+| Path                       | What it is                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------- |
+| `README.md`                | **This file** — the full handover documentation.                                                   |
+| `HTML Version/`            | The original single-file HTML app this project grew out of (`index.html`, plus `Version1/2` and `Debug` snapshots). Kept as a reference/fallback — see [Appendix B](#appendix-b--legacy-indexhtml). **New features go in the React app, not here.** |
+| `infrastructure Document/` | The handover PDFs (EN + TH).                                                                        |
+| `docs/`                    | `superpowers/plans` and `superpowers/specs` — working plan/spec notes from Claude Code sessions. Not app code. |
+| `.gitignore`               | Keeps `.env`, `annotations.db`, `node_modules/`, and build output out of git.                       |
+| `.claude/`                 | Claude Code local settings. Not part of the app.                                                    |
+
+### 0.7 "I want to change X" → open Y
+
+| I want to…                                            | Open                                                                  |
+| ----------------------------------------------------- | --------------------------------------------------------------------- |
+| Change which columns join ACS ↔ PPS                    | `lib/constants.ts` → `KEY_PAIRS` (then [§11.1](#111-add-a-new-key-column)) |
+| Add a size so it stops landing in the wrong bucket     | `lib/constants.ts` → `REG_SIZES` / `EXTEND_SIZE`                       |
+| Fix a wrong Match/Diff verdict                         | `lib/comparison.ts` → `runComparison`                                  |
+| Fix a row that says "No Key Match" but shouldn't       | `lib/comparison.ts` (index build) + `lib/normalize.ts` (`normalizeJoinKey`) |
+| Fix the wrong WISDOM row being picked                  | `lib/costsheet.ts` → `lookupCostsheet`                                 |
+| Fix a row showing another colour's ACS FOB             | `sql_backend.py` → `expand_colorway_rows` ([§4.3](#43-colorwaycode-row-expansion)) |
+| Change which currency is compared / add THB support    | `lib/constants.ts` → `PREFERRED_CURRENCY`; `lib/comparison.ts` → `preferUSDRows` |
+| Add or change a verdict state                          | `lib/comparison.ts` → `verdictOf` ([§6.6](#66-3-way-verdict-logic)) — then audit every `valueMatch` / `cMatch` branch |
+| Change which FOB column WISDOM reads for a size        | `lib/costsheet.ts` → `isExt` / `srcIdx` in `buildCostsheetIndex`; size lists in `lib/constants.ts` ([§6.5](#65-costsheet-matching-max-first-input-date)) |
+| Extended sizes all show "No CS"                        | [§12 troubleshooting](#extended-sizes-all-show-no-cs-but-regular-sizes-are-fine) — usually a renamed view column |
+| Change a column heading or add a table column          | `components/ResultsTable.tsx`                                          |
+| Change what the CSV export contains                    | `lib/csv.ts`                                                           |
+| Add or change an API endpoint                          | `sql_backend.py`                                                       |
+| Point at a different SQL Server / table                | `.env` (`DB_SERVER`, `DB_DATABASE`, `DB_TABLE_*`) — see [§11.6](#116-point-at-a-different-sql-server--table) |
+| Change who can log in                                  | `.env` (`AD_ALLOWED_GROUPS`) + `auth_ad.py`                            |
+| Change who can edit vs manage                          | The in-app Group Admin screen; logic in `groups_db.py`                 |
+| Change colours / spacing / fonts                       | `styles/tokens.css`                                                    |
+
+---
+
 ## 1. Purpose & Business Context
 
 **TL;DR:** For every uploaded PPS row, confirm its FOB price (`LOCAL_QUOTE_AMOUNT`) matches **both** the ACS FOB **and** the Costsheet/WISDOM Final FOB. Mismatches get flagged. This replaces a manual Excel VLOOKUP workflow.
@@ -395,9 +685,9 @@ Appendices: [A — File-level comment map](#appendix-a--file-level-comment-map) 
 The dashboard validates **`LOCAL_QUOTE_AMOUNT`** (the FOB price on a PPS quote) against two authoritative sources:
 
 - **ACS** (`dbo.ACS`) — the master DB of per-style / per-color / per-size FOB values.
-- **Costsheet / WISDOM** (`dbo.VIEW_COSTSHEET_WISDOM`) — the newer costsheet view whose `Final FOB` should also agree.
+- **Costsheet / WISDOM** (`dbo.VIEW_COSTSHEET_WISDOM`) — the newer costsheet view whose FOB should also agree. Which column that is depends on the row's size: `Final FOB` for regular sizes, `Extended Size FOB` for extended ones ([§6.5](#65-costsheet-matching-max-first-input-date)).
 
-For each PPS row it answers one question: _does `LOCAL_QUOTE_AMOUNT` match **both** the ACS FOB **and** the Costsheet Final FOB?_
+For each PPS row it answers one question: _does `LOCAL_QUOTE_AMOUNT` match **both** the ACS FOB **and** the Costsheet FOB?_
 
 | Result           | Meaning                                                                                                          |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -476,6 +766,8 @@ Key columns used by the frontend:
 | `FTYCODE`               | Maps to ACS `FactoryCode`                                        |
 | `SIZE_DATA`             | Normalised to `ALL_REG_SIZE_RB` / `ALL_EXTEND_SIZE_RB` / literal |
 | `LOCAL_QUOTE_AMOUNT`    | The value being validated                                        |
+| `LOCAL_CURRENCY`        | Which currency that amount is in — `USD` or `THB`. Drives `preferUSDRows` and the **Not Compared** verdict |
+| `INSERT_DATE`           | Newest-wins tie-break inside `dedupePPSRows`. Hidden from the PPS preview |
 | `ORIG_SIZE_DATA`        | (Added) preserves the raw `SIZE_DATA` for display                |
 
 The kept-column list is `STRICT_B_COLS` in `src/lib/constants.ts`. `MSC_CODE` / `RESPONSIBLE_DEVELOPER` come straight from the PPS file (they are not part of ACS/Costsheet). Rows where every one of these columns is empty are filtered out.
@@ -496,9 +788,23 @@ Columns the frontend expects (matched **tolerantly** — see [§6.1](#61-join-ke
 | Factory      | `Factory`          | `FactoryCode`, `Fty`, `FtyCode`               |
 | Size         | `Size`             | `SizeData`, `SizeCode`                        |
 | **FOB**      | **`Final FOB`**    | `FinalFOB`, `FinalFobPrice`, `FinalFobAmount` |
+| **Ext FOB**  | **`Extended Size FOB`** | `ExtendedSizeFOB`, `ExtSizeFOB`, `ExtendSizeFOB` |
 | Date         | `First Input Date` | `FirstInputDate`, `InputDate`, `FirstInput`   |
 
 Header matching drops whitespace / underscores / dots / hyphens and lowercases before comparing — so `Final FOB`, `FinalFOB`, `Final_FOB`, and `FINAL-FOB` all resolve to the same logical column.
+
+**Two FOB columns, not one (since 2026-08-05).** Which one is read depends on the
+Costsheet row's own size — see [§6.5](#65-costsheet-matching-max-first-input-date).
+Normalisation does **not** strip parentheses or percent signs, which is what keeps the
+view's other FOB-ish columns from colliding with these two:
+
+| View column | Normalises to | Used? |
+| ----------- | ------------- | ----- |
+| `Final FOB` | `finalfob` | ✅ regular-size rows |
+| `Extended Size FOB` | `extendedsizefob` | ✅ extended-size rows |
+| `FinalFOBCur(L4L)` | `finalfobcur(l4l)` | ❌ |
+| `Extended Size FOB(L4L)` | `extendedsizefob(l4l)` | ❌ |
+| `Extended Size Adj%` | `extendedsizeadj%` | ❌ |
 
 ---
 
@@ -536,7 +842,7 @@ DashBoard/                       ← Flask backend · dev: python sql_backend.py
 
 - **`sql_backend.py`** — The Flask application and the only process you run (in dev, `python sql_backend.py`, port 5001; on a server, `python serve.py` — see below). It defines **every HTTP route**: auth (`/login`, `/logout`, `/me`), the SQL Server data endpoints (`/get_file_a_data`, `/get_pps_factories`, `/get_pps_data`, `/get_costsheet_data`), the annotation read/save (`/annotations`), the group-management routes (`/groups*`), and the admin Log routes (`/ping`, `/admin/presence|logins|changes`). Data endpoints stringify every cell (SQL `NULL` → `""`), expand underscored `ColorwayCode` into one row each, and return `{ name, headers, rows }`. It also holds the **session/cookie config** (signed with `FLASK_SECRET_KEY`, HttpOnly, `SameSite=Lax`, 1-day lifetime, `Secure` only when `COOKIE_SECURE=true`), CORS-with-credentials, the **three access guards** (`@login_required` → 401 · `@require_edit` / `@require_manage` → 403), and the **SQL Server connection helper** (Windows `Trusted_Connection`, auto-picks the newest installed ODBC driver; `SERVER` / `DATABASE` / `TABLE_*` are constants at the top of the file). It imports and wires together all the modules below — e.g. the login route calls `auth_ad` to check the password, `groups_db.resolve_perms` to compute the user's rights, and `logs_db.record_login` to log it.
 
-- **`serve.py`** — The **production entry point** (added 2026-07-31). Three lines of real work: import `app` from `sql_backend`, hand it to **waitress**, listen. Use it instead of `python sql_backend.py` on any shared or always-on host — Flask's built-in server is single-threaded and prints its own "development server" warning for good reason. Because it *imports* `sql_backend`, everything that module does at import time still happens first (`load_dotenv()`, the three `init_db()` calls), so config and the SQLite tables are ready before the first request; and because the `serve()` call sits behind `if __name__ == '__main__'`, importing the module doesn't start a listener. Host/port/threads come from **`SERVE_HOST` · `SERVE_PORT` · `SERVE_THREADS`** (defaults `0.0.0.0` · `5001` · `8`) so the same file works in every environment with no edits — set `SERVE_HOST=127.0.0.1` once a reverse proxy fronts the app and Flask stops facing the LAN. This is also what NSSM should point at (§10.3), rather than at the `waitress-serve` console script, which depends on the service account's `PATH`.
+- **`serve.py`** — The **production entry point** (added 2026-07-31). Three lines of real work: import `app` from `sql_backend`, hand it to **waitress**, listen. Use it instead of `python sql_backend.py` on any shared or always-on host — Flask's built-in server is single-threaded and prints its own "development server" warning for good reason. Because it _imports_ `sql_backend`, everything that module does at import time still happens first (`load_dotenv()`, the three `init_db()` calls), so config and the SQLite tables are ready before the first request; and because the `serve()` call sits behind `if __name__ == '__main__'`, importing the module doesn't start a listener. Host/port/threads come from **`SERVE_HOST` · `SERVE_PORT` · `SERVE_THREADS`** (defaults `0.0.0.0` · `5001` · `8`) so the same file works in every environment with no edits — set `SERVE_HOST=127.0.0.1` once a reverse proxy fronts the app and Flask stops facing the LAN. This is also what NSSM should point at (§10.3), rather than at the `waitress-serve` console script, which depends on the service account's `PATH`.
 
 - **`auth_ad.py`** — The **credential check only** — no Flask, no database. `authenticate(username, password)` first tries the local dev account (if `LOCAL_AUTH_ENABLED`), then binds to Active Directory over LDAP/StartTLS, where AD itself verifies the password (bind as `user@domain` in `SIMPLE` mode or `DOMAIN\user` in `NTLM` mode). On success it locates the account with `AD_USER_FILTER`, reads the person's profile (name, email) and their `memberOf` groups, and applies the `AD_ALLOWED_GROUPS` policy that decides **who may log in at all** (a bare CN or a full DN both match; empty = everyone). It returns a plain dict `{username, display_name, email, groups, source}` (`source` = `ad` or `local`) and never touches sessions or app permissions (those belong to `sql_backend` + `groups_db`). Ported from the team's Django auth backend; `ldap3` is imported lazily so the module loads even where the AD stack isn't installed.
 
@@ -604,7 +910,28 @@ If CBDID has fewer than 2 dash segments it returns `''` silently, and the fronte
 
 ### 4.3 ColorwayCode row expansion
 
-Function: `expand_colorway_rows(base_row, colorway_idx)` — if `ColorwayCode` has underscores (e.g. `RED_BLU_GRN`), it splits into one row per code. This matches how PPS files store colours one-per-row and lets the join key be an exact single-value comparison instead of substring matching.
+Function: `expand_colorway_rows(base_row, colorway_idx)` — if `ColorwayCode` holds several codes joined by underscores (e.g. `011_066`, `006_010_065_323_410`), it splits into one row per code. This matches how PPS files store colours one-per-row and lets the join key be an exact single-value comparison instead of substring matching.
+
+**Codes starting `ALL_` are NOT split (fixed 2026-08-06).** `ALL_SOLID`, `ALL_AOP`, `ALL_HTR`, `ALL_011`, `ALL_010`, `ALL_531` are each **one** logical colourway that merely contains an underscore. Splitting them was a real bug:
+
+- `ALL_SOLID` became two rows, `ALL` and `SOLID`, so the join key `all_solid` **never existed** in the ACS index.
+- A PPS row with a blank `COLOR` — which `normalizeJoinKey` folds to `all_solid` — therefore missed its exact match, fell through to the no-colour fallback, and could take a **specific colour's FOB**. Style **IR7874 showed 4.72 (colourway 084) instead of 3.83 (ALL_SOLID)**.
+- Worse, `SELECT *` has no `ORDER BY`, so *which* colour it grabbed was not even deterministic between loads.
+
+It also un-broke `normalizeJoinKey` in the frontend, which already folds `all_htr` and `all_aop` into `all_solid` — folding that could never fire while those values were being split apart here first.
+
+| ColorwayCode | Rows in `dbo.ACS` | Behaviour |
+| ------------ | ----------------- | --------- |
+| `ALL_SOLID` | 1,370 | one row |
+| `ALL_AOP` | 152 | one row |
+| `ALL_HTR` | 14 | one row |
+| `ALL_011` · `ALL_010` · `ALL_531` | 1 each | one row |
+| `ALLSOLID` | 2 | one row (no underscore — never split) |
+| `011_066`, `006_010_065_323_410`, `PHT_PHV_PC2_PC1_PC3`, … | ~104 | **split**, one row per code |
+
+Impact when this shipped: the ACS payload dropped from **3,811 to 2,272 rows** (exactly the 1,539 `ALL_*` rows no longer split), and **2 rows moved Diff → Match**. 55 (season, style, factory) groups hold both `ALL_SOLID` and a specific colour — those were the ones at risk of a wrong FOB.
+
+Known gap: **`ALLSOLID`** (no underscore, 2 rows) still won't match a blank-`COLOR` PPS row, because `normalizeJoinKey` folds `''`, `all_htr`, `all_aop`, `retail` and `solid1` into `all_solid` — but not `allsolid`.
 
 **Order matters:** expansion runs **after** `EXTRACTED_SIZE` is appended, so every expanded row inherits the same size.
 
@@ -792,6 +1119,42 @@ The `FOB Source` column in the results renders one of `Final FOB` / `ExtSzFOB` /
 
 ### 6.5 Costsheet Matching (MAX First Input Date)
 
+**Which FOB column the Costsheet side reads (since 2026-08-05).** ACS carries two FOB
+columns on one row and picks between them by size (§6.4). The Costsheet view is shaped
+the other way — one row per size — so the source is chosen by **the Costsheet row's own
+size**, resolved once in `buildCostsheetIndex`:
+
+```ts
+const isExt  = normalizeCostsheetSizeToken(szRaw) === 'ALL_EXTEND_SIZE_RB';
+const srcIdx = isExt ? extFobIdx : fobIdx;   // Extended Size FOB vs Final FOB
+```
+
+| Costsheet row size | FOB column read |
+| ------------------ | --------------- |
+| `S`, `M`, `40`, `46R`, … | `Final FOB` |
+| the 31 `EXTEND_SIZE` values (`3XL`, `XL-T`, `CUST1`, `58`, …) | **`Extended Size FOB`** |
+
+**Two subtleties worth knowing before you touch this:**
+
+- **`normalizeCostsheetSizeToken` (`normalize.ts`) is NOT the same as `normalizeSizeToken`.**
+  It checks `EXTEND_SIZE` *before* `REG_SIZES`. `4X` and `48` are the only two values in
+  **both** lists, so they price from `Extended Size FOB` even though the shared resolver
+  calls them regular. Everything else resolves identically in both.
+- **It decides the FOB column ONLY — never the matching key.** `szNorm` still comes from
+  the shared `normalizeSizeToken`, because `FileSlotPPS.tsx` normalises every uploaded PPS
+  row's `SIZE_DATA` with that same function. If the two ever disagree, a PPS `4X` row stops
+  matching the Costsheet `4X` row and silently takes another size's price. This was a real
+  bug caught in review — keep the two concerns separate.
+
+**Empty `Extended Size FOB`.** An extended row whose ext-FOB cell is blank has no usable
+price: `lookupCostsheet` returns `matched: false`, the row renders `—` and counts as
+**No CS** rather than falling back to `Final FOB` or to an older row. This is deliberate —
+it surfaces the data gap instead of hiding it. Regular rows with a blank `Final FOB` are
+**unchanged** (still `matched: true` with a blank value, reading as a Diff); the asymmetry
+is intentional so nothing that worked before could change verdict.
+
+---
+
 Function: `lookupCostsheet(cIdx, bConvertedSize, joinKeyStr, keyNoColor)` in `costsheet.ts`. For each PPS row:
 
 1. **Fetch candidates** by full key from `cIdx.rawIndex`; if empty, try `cIdx.rawIndexNoColor[keyNoColor]`.
@@ -814,13 +1177,32 @@ Function: `lookupCostsheet(cIdx, bConvertedSize, joinKeyStr, keyNoColor)` in `co
 
 ### 6.6 3-Way Verdict Logic
 
-The rightmost `ACS Match?` column shows one of three states per row:
+The rightmost `ACS Match?` column shows one of **four** states per row:
 
-| State            | Condition                                                      |
-| ---------------- | -------------------------------------------------------------- |
-| **No Key Match** | ACS had no row matching the PPS key (even with color fallback) |
-| **Match**        | See condition below                                            |
-| **Diff**         | Not a Match and not a No Key Match                             |
+| State             | Condition                                                      |
+| ----------------- | -------------------------------------------------------------- |
+| **No Key Match**  | ACS had no row matching the PPS key (even with color fallback) |
+| **Not Compared**  | Quoted in a currency other than `PREFERRED_CURRENCY` — the comparison is **skipped**, not failed |
+| **Match**         | See condition below                                            |
+| **Diff**          | None of the above                                              |
+
+**Derive the verdict with `verdictOf(row)` — never re-implement it.** It is exported from `comparison.ts` and is the single source of truth; `summary.ts`, `csv.ts` and `App.tsx` all import it. Before it existed the same expression was copied in four places, which is why a fourth state could not be added consistently.
+
+```ts
+export type Verdict = 'match' | 'diff' | 'noKey' | 'notCompared';
+
+export function verdictOf(r: CompRow): Verdict {
+  if (r.status === 'noKeyMatch') return 'noKey';   // checked FIRST — see below
+  if (!r.comparable) return 'notCompared';
+  return r.valueMatch ? 'match' : 'diff';
+}
+```
+
+`noKey` is checked **first** on purpose: a row with no ACS match is a key problem regardless of what currency it was quoted in. A consequence worth knowing — with today's data **`notCompared` never actually fires**. A THB row only survives `preferUSDRows` when its group has no USD twin (5 groups, all HIT), and every one of those has no matching ACS row, so they all resolve to `noKey`. The state is correct but dormant; it activates the moment a THB-only group gains a matching ACS row.
+
+**Watch for the skipped-vs-failed trap.** A *skipped* comparison is indistinguishable from a *failed* one wherever code branches on a falsy value. `notCompared` needed explicit neutral handling in **four** separate places — the verdict badge, the ACS cell tint (`dbCls`), the WISDOM FOB cell, and the Summary donut — and every one was found only by reading the code, never by a passing build. If you add a fifth verdict, audit every expression derived from `valueMatch`, `cMatch`, `lqVsAcs` or `!isMatch`.
+
+`App.tsx` maps verdicts to filter categories through an explicit `Record<Verdict, FilterCategory>`, **not** a cast: `verdictOf` returns camelCase (`noKey`, `notCompared`) while `FilterCategory` is lowercase (`nokey`, `notcompared`), so a cast compiles cleanly and then silently filters nothing for exactly those two.
 
 The **Match** condition depends on whether Costsheet is loaded:
 
@@ -831,7 +1213,7 @@ const acsMatch = hasCData
 ```
 
 - `lqVsAcs` = `parseFloat(LOCAL_QUOTE_AMOUNT) ≈ parseFloat(ACS FOB)` with epsilon `0.0001` (falls back to case-insensitive string equality if either side isn't numeric).
-- `cMatch` = the same comparison against Costsheet Final FOB; stays `null` if no Costsheet row matched.
+- `cMatch` = the same comparison against the Costsheet FOB — `Final FOB` for a regular-size Costsheet row, `Extended Size FOB` for an extended-size one (see [§6.5](#65-costsheet-matching-max-first-input-date)); stays `null` if no Costsheet row matched.
 
 **By design:** when Costsheet is loaded but a row has _no_ Costsheet match (`cMatched = false`, `cMatch = null`), the verdict is **Diff** with reason `No WISDOM` — a 3-way check can't be _confirmed_ if a source is missing data.
 
@@ -1067,11 +1449,11 @@ Should print `* waitress serving on http://0.0.0.0:5001 (8 threads)`. Sanity-che
 changes**, and everything `sql_backend` does at import time (`load_dotenv()`, the three `init_db()`
 calls) still runs first. Tune it with env vars rather than editing the file:
 
-| Var             | Default   | Notes                                                                                    |
-| --------------- | --------- | ---------------------------------------------------------------------------------------- |
+| Var             | Default   | Notes                                                                                     |
+| --------------- | --------- | ----------------------------------------------------------------------------------------- |
 | `SERVE_HOST`    | `0.0.0.0` | Set to `127.0.0.1` once a reverse proxy fronts the app (§10.4) so Flask isn't LAN-facing. |
-| `SERVE_PORT`    | `5001`    | Keep in sync with `VITE_BACKEND_URL` / the proxy rule.                                   |
-| `SERVE_THREADS` | `8`       | Concurrent request workers. 8 is ample for this user count.                              |
+| `SERVE_PORT`    | `5001`    | Keep in sync with `VITE_BACKEND_URL` / the proxy rule.                                    |
+| `SERVE_THREADS` | `8`       | Concurrent request workers. 8 is ample for this user count.                               |
 
 Common startup errors (in addition to the ODBC/DB ones above):
 
@@ -1368,6 +1750,22 @@ The Flask backend is currently open. Before deploying anywhere but a laptop, at 
 - **HTTP 0 / CORS error** — Flask isn't running, or CORS is misconfigured. Confirm `http://localhost:5001` responds.
 - **`data.error` in the response** — the backend caught an exception and returned it; read the message.
 
+### A row shows the wrong ACS FOB — another colour's price
+
+Symptom: a PPS row with a blank `COLOR` displays the FOB of a *specific* colourway. Reported as style `IR7874` showing **4.72** (colourway `084`) instead of **3.83** (`ALL_SOLID`).
+
+1. Check the ACS preview. If a style appears **twice** with `ColorwayCode` `ALL` and `SOLID`, `expand_colorway_rows` is splitting `ALL_SOLID` — the backend is running code from before 2026-08-06. See [§4.3](#43-colorwaycode-row-expansion).
+2. Confirm on the server: `findstr /C:"COLORWAY_NO_SPLIT_PREFIX" sql_backend.py` → 2 hits means the fix is present.
+3. **Restart `serve.py` after copying it.** Waitress loads the module once at startup and never reloads, so a corrected file on disk changes nothing until restart. This has bitten twice.
+
+If `ALL_SOLID` is intact and the FOB is still wrong, the colourway genuinely differs — check `dbo.ACS` directly for that season/style/factory.
+
+### Two rows for the same style, size and factory with wildly different PPS FOB
+
+One will be ~31× the other (e.g. `3.71` and `115.84`) — that is USD vs THB for the **same** quote. The fix is `preferUSDRows` (see the [currency section](#currency-twins-run-before-de-duplication-added-2026-08-06)); if you still see both, the **frontend** is stale. Rebuild with `npm run build` and copy the whole `frontend/dist/` folder, deleting the server's old one first — Vite hashes filenames, so merging leaves stale bundles behind.
+
+Genuinely different **USD** amounts for one style/size are *not* a bug: 174 groups have revised quotes, and each keeps its own row and its own verdict.
+
 ### Every row is "No Key Match"
 
 - Check for a `Missing ACS columns:` toast — if present, the ACS view is missing a join column.
@@ -1377,6 +1775,25 @@ The Flask backend is currently open. Before deploying anywhere but a laptop, at 
 
 - Costsheet header names match no alias. Check the toast: `Costsheet missing columns: FOB ("Final FOB"), Date ("First Input Date"), …` — actual headers are logged to console (`[Costsheet] missing columns: … actual headers: […]`).
 - Or: no Costsheet rows exist for the PPS key — verify with a direct SQL query.
+
+### Extended sizes all show No CS but regular sizes are fine
+
+Since 2026-08-05 extended-size rows read `Extended Size FOB`, not `Final FOB` ([§6.5](#65-costsheet-matching-max-first-input-date)). Two causes, in order of likelihood:
+
+1. **The column didn't resolve.** Look for `Extended Size FOB ("Extended Size FOB")` in the
+   `Costsheet missing columns:` toast. If the view renamed that column, add the new spelling
+   to `C_KEY_ALIASES.extFob` in `constants.ts`. Careful: the view also has
+   `Extended Size FOB(L4L)` and `Extended Size Adj%`, which must **not** match.
+2. **The cell is genuinely empty** on the winning (newest) Costsheet row. That is the
+   designed behaviour — a blank ext FOB reports No CS rather than falling back to
+   `Final FOB` or to an older row. Confirm with:
+
+   ```sql
+   SELECT [Size], [Final FOB], [Extended Size Adj%], [Extended Size FOB]
+   FROM dbo.VIEW_COSTSHEET_WISDOM
+   WHERE [Style No.] = '<style>' AND [Season] = '<season>'
+   ORDER BY [First Input date] DESC
+   ```
 
 ### Max Input Date shows an unexpected value
 
