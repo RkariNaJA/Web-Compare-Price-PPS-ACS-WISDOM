@@ -118,7 +118,7 @@ export default function ResultsToolbar({
       </div>
       {notComparedCount > 0 && (
         <div className="stat-pill" title="Quoted in a currency the validator does not compare">
-          <span className="dot" style={{ background: 'var(--c-2)' }} /> Not Compared{' '}
+          <span className="dot" style={{ background: 'var(--notcompared)' }} /> Not Compared{' '}
           <span>{notComparedCount}</span>
         </div>
       )}

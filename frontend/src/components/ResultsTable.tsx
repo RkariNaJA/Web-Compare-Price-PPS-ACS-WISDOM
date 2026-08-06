@@ -249,10 +249,11 @@ export default function ResultsTable({
             })();
 
             // ACS FOB + PPS FOB cell classes — both driven by the same 3-way verdict.
-            // (Green on Match, red on Diff, dim on NoKey or NotCompared — notCompared joins
-            // NoKey on the neutral tint since no comparison ran, so it can claim neither
-            // agreement nor disagreement.)
-            const dbCls = isMatch ? 'cell-match' : isNoKey || isNotCompared ? 'cell-empty' : 'cell-miss';
+            // (Green on Match, red on Diff, muted-grey on NoKey, muted-violet on NotCompared —
+            // neither claims agreement nor disagreement, since no comparison ran for either,
+            // but NotCompared gets its own token so it reads as "currency-skipped", not "key
+            // problem".)
+            const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : isNotCompared ? 'cell-notcompared' : 'cell-miss';
             const lqCls = dbCls;
 
             // Small pill in the "FOB Source" column showing which ACS FOB was used.
@@ -348,12 +349,12 @@ export default function ResultsTable({
                 </>
               );
             } else if (isNotCompared) {
-              // Quoted in a currency the validator does not compare (e.g. THB) — reuse
-              // the neutral --only colour (same as the No Key state), not the red
-              // badge-miss styling, since no comparison ran at all for this row.
+              // Quoted in a currency the validator does not compare (e.g. THB) — its own
+              // --notcompared token, not the red badge-miss styling and not --only (which
+              // means "No Key" elsewhere), since no comparison ran at all for this row.
               acsResultNode = (
                 <span
-                  style={{ color: 'var(--only)' }}
+                  style={{ color: 'var(--notcompared)' }}
                   title="Quoted in a currency the validator does not compare"
                 >
                   — not compared
@@ -448,7 +449,11 @@ export default function ResultsTable({
                       <>
                         <td
                           className={`grp ${
-                            isNotCompared ? 'cell-empty' : row.cMatch ? 'cell-match' : 'cell-miss'
+                            isNotCompared
+                              ? 'cell-notcompared'
+                              : row.cMatch
+                                ? 'cell-match'
+                                : 'cell-miss'
                           }`}
                         >
                           {row.cFobValue || '—'}

@@ -2,8 +2,8 @@
  * CSV export for the results table.
  *
  * Produces a spreadsheet with one row per compared PPS row plus an explicit
- * Verdict column (MATCH / DIFF / NO_KEY_MATCH) and a Diff_Reason so the user
- * can filter for problem rows in Excel with a single click.
+ * Verdict column (MATCH / DIFF / NO_KEY_MATCH / NOT_COMPARED) and a Diff_Reason
+ * so the user can filter for problem rows in Excel with a single click.
  */
 import type { CompRow, RowAnnotation } from './types';
 import { verdictOf } from './comparison';

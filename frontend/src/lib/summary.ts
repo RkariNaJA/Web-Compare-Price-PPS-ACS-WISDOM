@@ -1,7 +1,7 @@
 /**
  * Pure aggregation for the Validation Summary view. Turns the current run's CompRows
- * into Match / Diff / No Key counts, grouped by factory, by season, and by (factory ×
- * season). No React — just data in, data out (so it's trivially testable).
+ * into Match / Diff / No Key / Not Compared counts, grouped by factory, by season, and
+ * by (factory × season). No React — just data in, data out (so it's trivially testable).
  *
  * Verdict mapping (identical to the results toolbar, via verdictOf — see comparison.ts):
  *   No Key = status 'noKeyMatch'  ·  Not Compared = comparable is false  ·

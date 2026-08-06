@@ -11,13 +11,18 @@ import { summarize, type GroupCount } from '../lib/summary';
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0);
 
-// Conic-gradient donut for one group's Match → Diff → No Key split (fixed order).
+// Conic-gradient donut for one group's Match → Diff → No Key → Not Compared split
+// (fixed order). Every stop's END is derived from that slice's OWN count — none of
+// the four is ever "whatever's left" (that implicit-remainder shape is exactly what
+// used to paint notCompared rows in the No Key colour).
 const donutStyle = (g: GroupCount) => {
   const t = g.total || 1;
-  const mPct = (g.match / t) * 100;
+  const mEnd = (g.match / t) * 100;
   const dEnd = ((g.match + g.diff) / t) * 100;
+  const nkEnd = ((g.match + g.diff + g.noKey) / t) * 100;
+  const ncEnd = ((g.match + g.diff + g.noKey + g.notCompared) / t) * 100;
   return {
-    background: `conic-gradient(var(--match) 0 ${mPct}%, var(--mismatch) ${mPct}% ${dEnd}%, var(--only) ${dEnd}% 100%)`,
+    background: `conic-gradient(var(--match) 0 ${mEnd}%, var(--mismatch) ${mEnd}% ${dEnd}%, var(--only) ${dEnd}% ${nkEnd}%, var(--notcompared) ${nkEnd}% ${ncEnd}%)`,
   };
 };
 
@@ -35,7 +40,10 @@ function FactoryDonut({ g }: { g: GroupCount }) {
           aria-label={`${g.key}: Match ${g.match} (${pct(g.match, g.total)}%), Diff ${g.diff} (${pct(
             g.diff,
             g.total,
-          )}%), No Key ${g.noKey} (${pct(g.noKey, g.total)}%)`}
+          )}%), No Key ${g.noKey} (${pct(g.noKey, g.total)}%), Not Compared ${g.notCompared} (${pct(
+            g.notCompared,
+            g.total,
+          )}%)`}
         />
         <div className="summary-donut-center">
           <span className="dc-total">{g.total}</span>
@@ -61,6 +69,12 @@ function FactoryDonut({ g }: { g: GroupCount }) {
           <span className="ll-count">{g.noKey}</span>
           <span className="ll-pct">{pct(g.noKey, g.total)}%</span>
         </li>
+        <li>
+          <span className="dot" style={{ background: 'var(--notcompared)' }} />
+          <span className="ll-label">Not Compared</span>
+          <span className="ll-count">{g.notCompared}</span>
+          <span className="ll-pct">{pct(g.notCompared, g.total)}%</span>
+        </li>
       </ul>
     </div>
   );
@@ -81,7 +95,7 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
     );
   }
 
-  const { match, diff, noKey, total } = s.totals;
+  const { match, diff, noKey, notCompared, total } = s.totals;
 
   return (
     <div className="summary-dashboard">
@@ -105,6 +119,7 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
                   <th>Match</th>
                   <th>Diff</th>
                   <th>No Key</th>
+                  <th>Not Compared</th>
                   <th>Total</th>
                 </tr>
               </thead>
@@ -116,6 +131,7 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
                     <td className="summary-num match">{r.match}</td>
                     <td className="summary-num diff">{r.diff}</td>
                     <td className="summary-num nokey">{r.noKey}</td>
+                    <td className="summary-num notcompared">{r.notCompared}</td>
                     <td className="summary-num">{r.total}</td>
                   </tr>
                 ))}
@@ -132,6 +148,9 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
                   </td>
                   <td className="summary-num nokey">
                     <strong>{noKey}</strong>
+                  </td>
+                  <td className="summary-num notcompared">
+                    <strong>{notCompared}</strong>
                   </td>
                   <td className="summary-num">
                     <strong>{total}</strong>

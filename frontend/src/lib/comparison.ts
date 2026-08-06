@@ -118,6 +118,8 @@ function makeRowKey(parts: string[]): string {
 // unchanged when LOCAL_CURRENCY is absent — an uploaded spreadsheet has no such column.
 // Runs BEFORE dedupePPSRows, which still keys on the amount and so still keeps genuinely
 // different quotes apart.
+//
+// Like dedupePPSRows, the group key omits FTYCODE — one PPSFile is one factory.
 function preferUSDRows(fileB: PPSFile): Row[] {
   const h = fileB.headers;
   const curIdx = h.indexOf('LOCAL_CURRENCY');
@@ -339,10 +341,17 @@ export function runComparison(
       // Pick the single best ACS row from those candidates (size-based).
       const matchA = matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx);
       const rowA = matchA ? matchA.row : null;
+      // Trimmed (not raw — trailing whitespace from the DB would otherwise break the
+      // exact-string fallback in the ACS/Costsheet comparisons below).
       const localQuoteVal = String(rowB[localQuoteIdx] ?? '').trim();
-      // Raw value so the table shows exactly what the DB holds; the comparable check
-      // normalises the same way preferUSDRows does, so ' usd ' is not kept-then-flagged.
       const currency = currencyIdx !== -1 ? String(rowB[currencyIdx] ?? '').trim() : '';
+      // A blank LOCAL_CURRENCY cell means "assume preferred" here, so a blank-only group
+      // IS comparable — but preferUSDRows treats a blank cell as NOT preferred, so it is
+      // dropped whenever its group also has a real USD row (see preferUSDRows above). The
+      // two rules deliberately do NOT normalise "the same way" for the blank case; they
+      // only agree once a currency is actually present. Measured 0 blank/NULL
+      // LOCAL_CURRENCY rows in production, so this asymmetry is currently unreachable
+      // (see verify-currency.mjs T18).
       const comparable = currency === '' || currency.toUpperCase() === PREFERRED_CURRENCY;
 
       // Stable identity for saving Error From / Done — survives re-validation and is
@@ -428,16 +437,21 @@ export function runComparison(
         let cVersionVal = '';
         let cCostSheetNo = '';
         let cDateStr = '';
-        if (comparable && cResult && cResult.matched) {
+        if (cResult && cResult.matched) {
           cFobValue = cResult.fobVal;
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
-          const numC = parseFloat(cFobValue);
-          cMatch =
-            !isNaN(numL) && !isNaN(numC)
-              ? Math.abs(numL - numC) < 0.0001
-              : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          // Only the comparison is currency-dependent — a non-preferred-currency quote
+          // cannot be compared against a USD Costsheet FOB, so cMatch stays null ("no
+          // verdict"), while the matched record's own metadata above is still shown.
+          if (comparable) {
+            const numC = parseFloat(cFobValue);
+            cMatch =
+              !isNaN(numL) && !isNaN(numC)
+                ? Math.abs(numL - numC) < 0.0001
+                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          }
         }
 
         // Final 3-way verdict. When Costsheet is loaded, ALL three must agree.
@@ -509,12 +523,16 @@ export function runComparison(
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
-          const numC = parseFloat(cFobValue);
-          const numL2 = parseFloat(localQuoteVal);
-          cMatch =
-            !isNaN(numL2) && !isNaN(numC)
-              ? Math.abs(numL2 - numC) < 0.0001
-              : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          // Only the comparison is currency-dependent — see the identical gate in the
+          // happy path above.
+          if (comparable) {
+            const numC = parseFloat(cFobValue);
+            const numL2 = parseFloat(localQuoteVal);
+            cMatch =
+              !isNaN(numL2) && !isNaN(numC)
+                ? Math.abs(numL2 - numC) < 0.0001
+                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          }
         }
 
         compRows.push({
