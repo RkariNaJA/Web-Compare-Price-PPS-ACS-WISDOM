@@ -524,10 +524,23 @@ EOF
 ### Task 3: Surface it in the UI
 
 **Files:**
-- Modify: `frontend/src/App.tsx` (filter predicate 175-180, counts 224-226, Validate toast ~160)
+- Modify: `frontend/src/App.tsx` (filter predicate 175-180, counts 224-226, Validate toast 155-160)
 - Modify: `frontend/src/components/ResultsToolbar.tsx` (`FilterCategory` 21, `Props` 23-48, stat pills 103-117, filter buttons 191-204)
 - Modify: `frontend/src/components/ResultsTable.tsx` (PPS FOB cell, verdict badge)
+- Modify: `frontend/src/components/FileSlotPPS.tsx` (preview header filter, line 125)
 - Modify: `$SP/verify-currency.mjs`
+
+**Also fix a side effect Task 1 introduced.** Adding `INSERT_DATE` to `STRICT_B_COLS` made it a kept column, and `FileSlotPPS.tsx:125` filters only `ORIG_SIZE_DATA` out of the preview — so a raw `datetime2` column now appears in the on-screen PPS preview. It is an internal column like `ORIG_SIZE_DATA` and should be hidden the same way:
+
+```ts
+    const headers = files[0].headers.filter(
+      (h) => h !== 'ORIG_SIZE_DATA' && h !== 'INSERT_DATE',
+    );
+```
+
+Keep `LOCAL_CURRENCY` visible in the preview — unlike `INSERT_DATE` it is information the user wants.
+
+**Also correct one stale comment.** `summary.ts:6-7` says the verdict mapping is "identical to the results toolbar" and lists only three states. That claim is false between Tasks 2 and 3; this task makes it true again, so update it to name all four states. This is the only edit permitted in `summary.ts` here.
 
 **Interfaces:**
 - Consumes: `verdictOf`, `Verdict`, `CompareResult.notComparedCount`, `CompareResult.currencyFilteredRows`, `CompRow.currency`
@@ -590,15 +603,23 @@ Counts (lines 224-226):
   const notComparedCount = filtered.filter((r) => verdictOf(r) === 'notCompared').length;
 ```
 
-Pass `notComparedCount` to `ResultsToolbar`, and extend the Validate toast (~line 160) so currency filtering is reported separately from de-duplication:
+Pass `notComparedCount` to `ResultsToolbar`, and extend the Validate toast so currency filtering is reported separately from de-duplication.
+
+> **`currencyFilteredRows` is CONTAINED IN `collapsedRows`, not disjoint from it.** `collapsedRows` is `rawPPSRows - compRows.length` (`comparison.ts`) and `rawPPSRows` is summed **before** the currency pass, so every currency-dropped row is also counted as a collapsed duplicate. `App.tsx:155-158` renders that total as *"duplicate rows collapsed"*. Naively appending a second note would report the same rows twice. Subtract:
 
 ```ts
+    const dupOnly = result.collapsedRows - result.currencyFilteredRows;
+    const dupNote =
+      dupOnly > 0 ? ` · ${dupOnly.toLocaleString()} duplicate rows collapsed` : '';
     const curNote = result.currencyFilteredRows
-      ? ` · ${result.currencyFilteredRows} non-${PREFERRED_CURRENCY} rows excluded`
+      ? ` · ${result.currencyFilteredRows.toLocaleString()} non-${PREFERRED_CURRENCY} rows excluded`
+      : '';
+    const ncNote = result.notComparedCount
+      ? ` · ${result.notComparedCount.toLocaleString()} not compared`
       : '';
 ```
 
-Append `curNote` alongside the existing `dupNote`, and add `${result.notComparedCount} not compared` to the toast when it is non-zero.
+Replace the existing `dupNote` block (`App.tsx:155-158`) with the three above and append all three to the toast string at `:160`.
 
 - [ ] **Step 4: Implement the two components**
 

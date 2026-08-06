@@ -1,7 +1,9 @@
 /**
  * Toolbar above the results table.
  *
- * Left side: 4 stat pills showing counts (Match / Diff / No Key / Showing).
+ * Left side: stat pills showing counts (Match / Diff / No Key / Not Compared /
+ * Showing). "Not Compared" only renders when non-zero, so the toolbar doesn't
+ * grow for validations with no non-preferred-currency rows.
  * Right side: Season & Factory dropdowns, MSC Code & Developer combo fields
  * (type-to-filter or pick from the datalist), a search box, filter-mode
  * buttons, a Clear Filters button (full reset), and Export CSV.
@@ -11,14 +13,14 @@
  *
  * Filter buttons are MULTI-SELECT toggles:
  *   • "All" clears every category (empty set = show everything).
- *   • "Match" / "Diff" / "No Key" each toggle independently. Rows matching
- *     ANY active category are shown (OR semantics), so you can view Match+Diff
- *     together while hiding No Key rows.
+ *   • "Match" / "Diff" / "No Key" / "Not Compared" each toggle independently.
+ *     Rows matching ANY active category are shown (OR semantics), so you can
+ *     view Match+Diff together while hiding No Key rows.
  */
 import type { CompRow } from '../lib/types';
 
 // A single filter category. App owns a Set<FilterCategory>; empty set = show all.
-export type FilterCategory = 'match' | 'diff' | 'nokey';
+export type FilterCategory = 'match' | 'diff' | 'nokey' | 'notcompared';
 
 interface Props {
   rows: CompRow[];              // *unfiltered* rows (for computing dropdown options)
@@ -26,6 +28,7 @@ interface Props {
   matchCount: number;
   diffCount: number;
   noKeyCount: number;
+  notComparedCount: number;
   activeFilters: Set<FilterCategory>;
   toggleFilter: (c: FilterCategory) => void;
   clearFilters: () => void;
@@ -53,6 +56,7 @@ export default function ResultsToolbar({
   matchCount,
   diffCount,
   noKeyCount,
+  notComparedCount,
   activeFilters,
   toggleFilter,
   clearFilters,
@@ -112,6 +116,12 @@ export default function ResultsToolbar({
         <span className="dot" style={{ background: 'var(--only)' }} /> No Key{' '}
         <span>{noKeyCount}</span>
       </div>
+      {notComparedCount > 0 && (
+        <div className="stat-pill" title="Quoted in a currency the validator does not compare">
+          <span className="dot" style={{ background: 'var(--notcompared)' }} /> Not Compared{' '}
+          <span>{notComparedCount}</span>
+        </div>
+      )}
       <div className="stat-pill">
         Showing <span>{filteredCount}</span>
       </div>
@@ -188,9 +198,10 @@ export default function ResultsToolbar({
         >
           All
         </button>
-        {(['match', 'diff', 'nokey'] as FilterCategory[]).map((c) => {
+        {(['match', 'diff', 'nokey', 'notcompared'] as FilterCategory[]).map((c) => {
           const active = activeFilters.has(c);
-          const label = c === 'match' ? 'Match' : c === 'diff' ? 'Diff' : 'No Key';
+          const label =
+            c === 'match' ? 'Match' : c === 'diff' ? 'Diff' : c === 'nokey' ? 'No Key' : 'Not Compared';
           return (
             <button
               key={c}

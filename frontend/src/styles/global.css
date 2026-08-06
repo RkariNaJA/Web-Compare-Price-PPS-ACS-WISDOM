@@ -696,6 +696,10 @@ table.result td.sticky-end {
   color: var(--muted);
   font-style: italic;
 }
+.cell-notcompared {
+  color: var(--notcompared);
+  font-style: italic;
+}
 .cell-key-match {
   background: color-mix(in srgb, var(--match) 18%, transparent);
   color: var(--match);
@@ -1297,6 +1301,9 @@ th.grp {
 }
 .summary-num.nokey {
   color: var(--only);
+}
+.summary-num.notcompared {
+  color: var(--notcompared);
 }
 .summary-empty {
   flex: 1;

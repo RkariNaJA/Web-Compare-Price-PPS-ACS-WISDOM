@@ -14,6 +14,8 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CompRow, RowAnnotation } from '../lib/types';
+import { verdictOf } from '../lib/comparison';
+import { PREFERRED_CURRENCY } from '../lib/constants';
 
 interface Props {
   rows: CompRow[];               // already filtered by App
@@ -228,6 +230,9 @@ export default function ResultsTable({
             // Derived flags used to choose which cell classes to apply
             const isMatch = row.valueMatch;
             const isNoKey = row.status === 'noKeyMatch';
+            // Quoted in a currency the validator doesn't compare (e.g. THB) — no
+            // comparison was performed, so cells must not claim agreement OR disagreement.
+            const isNotCompared = verdictOf(row) === 'notCompared';
             // Saved annotation for this row (by stable rowKey); undefined if none.
             const ann = annotations[row.rowKey];
 
@@ -244,8 +249,11 @@ export default function ResultsTable({
             })();
 
             // ACS FOB + PPS FOB cell classes — both driven by the same 3-way verdict.
-            // (Green on Match, red on Diff, dim on NoKey.)
-            const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : 'cell-miss';
+            // (Green on Match, red on Diff, muted-grey on NoKey, muted-violet on NotCompared —
+            // neither claims agreement nor disagreement, since no comparison ran for either,
+            // but NotCompared gets its own token so it reads as "currency-skipped", not "key
+            // problem".)
+            const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : isNotCompared ? 'cell-notcompared' : 'cell-miss';
             const lqCls = dbCls;
 
             // Small pill in the "FOB Source" column showing which ACS FOB was used.
@@ -340,6 +348,18 @@ export default function ResultsTable({
                   </details>
                 </>
               );
+            } else if (isNotCompared) {
+              // Quoted in a currency the validator does not compare (e.g. THB) — its own
+              // --notcompared token, not the red badge-miss styling and not --only (which
+              // means "No Key" elsewhere), since no comparison ran at all for this row.
+              acsResultNode = (
+                <span
+                  style={{ color: 'var(--notcompared)' }}
+                  title="Quoted in a currency the validator does not compare"
+                >
+                  — not compared
+                </span>
+              );
             } else if (isMatch) {
               acsResultNode = (
                 <>
@@ -412,7 +432,14 @@ export default function ResultsTable({
                   <span className={fobTagCls}>{fobTagText}</span>
                 </td>
                 {/* PPS LOCAL_QUOTE_AMOUNT + ACS FOB value (both coloured by the 3-way verdict) */}
-                <td className={`grp ${lqCls}`}>{row.localQuoteVal || '—'}</td>
+                <td className={`grp ${lqCls}`}>
+                  {row.localQuoteVal || '—'}
+                  {row.currency && row.currency.toUpperCase() !== PREFERRED_CURRENCY && (
+                    <span style={{ opacity: 0.6, marginLeft: 4, fontSize: '.85em' }}>
+                      {row.currency}
+                    </span>
+                  )}
+                </td>
                 <td className={`grp ${dbCls}`}>{row.dbFobValue || '—'}</td>
                 {/* Costsheet columns: WISDOM Final FOB + Version + Cost Sheet No + Max Input Date.
                     Only when File C is loaded. If no CS row matched, show em-dashes. */}
@@ -420,7 +447,15 @@ export default function ResultsTable({
                   <>
                     {row.cMatched ? (
                       <>
-                        <td className={`grp ${row.cMatch ? 'cell-match' : 'cell-miss'}`}>
+                        <td
+                          className={`grp ${
+                            isNotCompared
+                              ? 'cell-notcompared'
+                              : row.cMatch
+                                ? 'cell-match'
+                                : 'cell-miss'
+                          }`}
+                        >
                           {row.cFobValue || '—'}
                         </td>
                         <td className="cell-c">{row.cVersionVal || '—'}</td>

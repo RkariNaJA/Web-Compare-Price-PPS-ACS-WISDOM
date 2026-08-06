@@ -35,6 +35,7 @@
   --match: #5f7355;
   --mismatch: #9e5a52;
   --only: #8a6f37;
+  --notcompared: #6d5a8c;  /* fuji — currency-skipped comparison; distinct from --only (No Key) and --c-2 (WISDOM) */
 
   /* text color for filled accent surfaces (buttons) */
   --on-accent: #f4f2ea;
@@ -85,6 +86,7 @@
     --match: #8ca07e;
     --mismatch: #c08a82;
     --only: #c7ac72;
+    --notcompared: #b3a0c9;
 
     --on-accent: #1a1917;
 
@@ -110,6 +112,7 @@
   --match: #5f7355;
   --mismatch: #9e5a52;
   --only: #8a6f37;
+  --notcompared: #6d5a8c;
   --on-accent: #f4f2ea;
   --text: #26251f;
   --muted: #7c776b;
@@ -131,6 +134,7 @@
   --match: #8ca07e;
   --mismatch: #c08a82;
   --only: #c7ac72;
+  --notcompared: #b3a0c9;
   --on-accent: #1a1917;
   --text: #e7e3d9;
   --muted: #9a948a;

@@ -18,10 +18,18 @@ import LoginPage from './components/LoginPage';
 import GroupAdmin from './components/GroupAdmin';
 import LogDashboard from './components/LogDashboard';
 import SummaryDashboard from './components/SummaryDashboard';
-import { runComparison } from './lib/comparison';
+import { runComparison, verdictOf, type Verdict } from './lib/comparison';
 import { exportComparisonCSV } from './lib/csv';
 import { fetchAnnotations, saveAnnotations } from './lib/api';
+import { PREFERRED_CURRENCY } from './lib/constants';
 import type { AppView, CompRow, PPSFile, RowAnnotation, TableData } from './lib/types';
+
+// verdictOf returns camelCase (noKey, notCompared); FilterCategory is lowercase
+// (nokey, notcompared) for the toolbar's button/category naming. An `as FilterCategory`
+// cast would compile but silently match nothing for those two states, so map explicitly.
+const VERDICT_TO_CATEGORY: Record<Verdict, FilterCategory> = {
+  match: 'match', diff: 'diff', noKey: 'nokey', notCompared: 'notcompared',
+};
 
 function AppInner() {
   const toast = useToast();
@@ -152,12 +160,17 @@ function AppInner() {
       // onto the freshly-built rows by rowKey.
       loadAnnotations();
       result.warnings.forEach((w) => toast(w, 'err'));
+      const dupOnly = result.collapsedRows - result.currencyFilteredRows;
       const dupNote =
-        result.collapsedRows > 0
-          ? ` · ${result.collapsedRows.toLocaleString()} duplicate rows collapsed`
-          : '';
+        dupOnly > 0 ? ` · ${dupOnly.toLocaleString()} duplicate rows collapsed` : '';
+      const curNote = result.currencyFilteredRows
+        ? ` · ${result.currencyFilteredRows.toLocaleString()} non-${PREFERRED_CURRENCY} rows excluded`
+        : '';
+      const ncNote = result.notComparedCount
+        ? ` · ${result.notComparedCount.toLocaleString()} not compared`
+        : '';
       toast(
-        `Done — ${result.matchCount} ACS match · ${result.diffCount} diff · ${result.noKeyCount} no key match${dupNote}`,
+        `Done — ${result.matchCount} ACS match · ${result.diffCount} diff · ${result.noKeyCount} no key match${dupNote}${curNote}${ncNote}`,
         'ok',
       );
     } catch (err) {
@@ -173,12 +186,7 @@ function AppInner() {
     let rows = compRows;
     // Verdict filter — OR across active categories. Empty set means no filter (show all).
     if (activeFilters.size > 0) {
-      rows = rows.filter((r) => {
-        if (activeFilters.has('match') && r.valueMatch) return true;
-        if (activeFilters.has('diff') && r.status === 'matched' && !r.valueMatch) return true;
-        if (activeFilters.has('nokey') && r.status === 'noKeyMatch') return true;
-        return false;
-      });
+      rows = rows.filter((r) => activeFilters.has(VERDICT_TO_CATEGORY[verdictOf(r)]));
     }
     // Dropdown filters
     if (seasonFilter) {
@@ -221,9 +229,10 @@ function AppInner() {
   }, [compRows, activeFilters, search, seasonFilter, factoryFilter, developerFilter, mscCodeFilter]);
 
   // Counts reflect the *filtered* rows so the toolbar stats respond to the filters.
-  const matchCount = filtered.filter((r) => r.valueMatch).length;
-  const diffCount = filtered.filter((r) => r.status === 'matched' && !r.valueMatch).length;
-  const noKeyCount = filtered.filter((r) => r.status === 'noKeyMatch').length;
+  const matchCount = filtered.filter((r) => verdictOf(r) === 'match').length;
+  const diffCount = filtered.filter((r) => verdictOf(r) === 'diff').length;
+  const noKeyCount = filtered.filter((r) => verdictOf(r) === 'noKey').length;
+  const notComparedCount = filtered.filter((r) => verdictOf(r) === 'notCompared').length;
 
   const showResults = compRows.length > 0;
 
@@ -312,6 +321,7 @@ function AppInner() {
             matchCount={matchCount}
             diffCount={diffCount}
             noKeyCount={noKeyCount}
+            notComparedCount={notComparedCount}
             activeFilters={activeFilters}
             toggleFilter={toggleFilter}
             clearFilters={clearFilters}

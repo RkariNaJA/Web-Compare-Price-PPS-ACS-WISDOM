@@ -9,7 +9,7 @@
  * Everything here is pure — no React, no fetch. Called on Validate button click.
  */
 import type { CompRow, KeyDisplay, PPSFile, Row, TableData } from './types';
-import { JOIN_KEY_PAIRS, KEY_PAIRS } from './constants';
+import { JOIN_KEY_PAIRS, KEY_PAIRS, PREFERRED_CURRENCY } from './constants';
 import {
   convertBExtendSize,
   convertBSize,
@@ -26,7 +26,23 @@ export interface CompareResult {
   diffCount: number;
   noKeyCount: number;
   warnings: string[];
-  collapsedRows: number;   // raw PPS rows merged away by de-duplication (0 if none)
+  collapsedRows: number;         // raw PPS rows that did not survive to output. INCLUDES
+                                  // currencyFilteredRows — subtract it for a duplicates-only figure
+  currencyFilteredRows: number;  // subset of collapsedRows: rows dropped because their group
+                                  // also had a PREFERRED_CURRENCY quote
+  notComparedCount: number;
+}
+
+// The row's verdict, derived in ONE place. Previously this same expression lived in
+// comparison.ts, summary.ts, csv.ts and App.tsx, which is why a fourth state could not be
+// added consistently. noKey is checked first: a row with no ACS match is a key problem
+// regardless of what currency it was quoted in.
+export type Verdict = 'match' | 'diff' | 'noKey' | 'notCompared';
+
+export function verdictOf(r: CompRow): Verdict {
+  if (r.status === 'noKeyMatch') return 'noKey';
+  if (!r.comparable) return 'notCompared';
+  return r.valueMatch ? 'match' : 'diff';
 }
 
 // One ACS row plus its original index — kept together so we can trace back
@@ -89,6 +105,38 @@ function matchDbRowForSize(
 // Kept in sync with dedupePPSRows so a saved value maps back to exactly one row.
 function makeRowKey(parts: string[]): string {
   return parts.map((p) => p.trim().toLowerCase()).join('|');
+}
+
+// dbo.PPS quotes the same price once per currency (USD and THB today), so one logical
+// quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 3.71 USD and 115.84 THB
+// are the same price at a ~31 rate. Collapse each (season, style, color, size) group to
+// the preferred currency. The amount is deliberately NOT part of the group key: it is the
+// very thing that differs between twins.
+//
+// Groups with NO preferred-currency row pass through untouched, so a THB-only quote still
+// reaches the table (flagged non-comparable via CompRow.comparable). Returns the rows
+// unchanged when LOCAL_CURRENCY is absent — an uploaded spreadsheet has no such column.
+// Runs BEFORE dedupePPSRows, which still keys on the amount and so still keeps genuinely
+// different quotes apart.
+//
+// Like dedupePPSRows, the group key omits FTYCODE — one PPSFile is one factory.
+function preferUSDRows(fileB: PPSFile): Row[] {
+  const h = fileB.headers;
+  const curIdx = h.indexOf('LOCAL_CURRENCY');
+  if (curIdx === -1) return fileB.rows;
+  const sizeCol = h.indexOf('ORIG_SIZE_DATA') !== -1 ? 'ORIG_SIZE_DATA' : 'SIZE_DATA';
+  const groupIdx = ['SEASON_YEAR', 'STYLE', 'COLOR', sizeCol].map((c) => h.indexOf(c));
+  if (groupIdx.some((i) => i === -1)) return fileB.rows;
+
+  const groupOf = (row: Row) =>
+    groupIdx.map((i) => String(row[i] ?? '').trim().toLowerCase()).join('|');
+  const isPreferred = (row: Row) =>
+    String(row[curIdx] ?? '').trim().toUpperCase() === PREFERRED_CURRENCY;
+
+  const groupsWithPreferred = new Set<string>();
+  for (const row of fileB.rows) if (isPreferred(row)) groupsWithPreferred.add(groupOf(row));
+
+  return fileB.rows.filter((row) => !groupsWithPreferred.has(groupOf(row)) || isPreferred(row));
 }
 
 // dbo.PPS is a quote-history log: the same style/color/size/quote is re-inserted
@@ -193,10 +241,12 @@ export function runComparison(
   const compRows: CompRow[] = [];
   let globalRow = 0;  // 1-based row counter across all PPS files, shown in the # column
   let rawPPSRows = 0; // total PPS rows across processed files BEFORE de-duplication
+  let currencyFilteredRows = 0; // rows dropped by preferUSDRows
 
   dataBFiles.forEach((fileB) => {
     const bHdr = fileB.headers;
     const localQuoteIdx = bHdr.indexOf('LOCAL_QUOTE_AMOUNT');
+    const currencyIdx = bHdr.indexOf('LOCAL_CURRENCY');
     const origSizeIdx = bHdr.indexOf('ORIG_SIZE_DATA');
     const sizeDataIdx = bHdr.indexOf('SIZE_DATA');
     // Display-only PPS columns surfaced before the key columns in the results table.
@@ -215,7 +265,10 @@ export function runComparison(
     // Collapse this factory's quote-history duplicates to one row per validation
     // case before comparing (see dedupePPSRows above).
     rawPPSRows += fileB.rows.length;
-    const dedupedRows = dedupePPSRows(fileB);
+    // Collapse currency twins first, then the quote-history duplicates.
+    const preferredRows = preferUSDRows(fileB);
+    currencyFilteredRows += fileB.rows.length - preferredRows.length;
+    const dedupedRows = dedupePPSRows({ ...fileB, rows: preferredRows });
 
     // ── Walk every (de-duplicated) PPS row and match it against ACS + Costsheet ──
     dedupedRows.forEach((rowB) => {
@@ -288,7 +341,18 @@ export function runComparison(
       // Pick the single best ACS row from those candidates (size-based).
       const matchA = matchDbRowForSize(candidates, bRawSize, bConvertedSize, sizeAIdx);
       const rowA = matchA ? matchA.row : null;
+      // Trimmed (not raw — trailing whitespace from the DB would otherwise break the
+      // exact-string fallback in the ACS/Costsheet comparisons below).
       const localQuoteVal = String(rowB[localQuoteIdx] ?? '').trim();
+      const currency = currencyIdx !== -1 ? String(rowB[currencyIdx] ?? '').trim() : '';
+      // A blank LOCAL_CURRENCY cell means "assume preferred" here, so a blank-only group
+      // IS comparable — but preferUSDRows treats a blank cell as NOT preferred, so it is
+      // dropped whenever its group also has a real USD row (see preferUSDRows above). The
+      // two rules deliberately do NOT normalise "the same way" for the blank case; they
+      // only agree once a currency is actually present. Measured 0 blank/NULL
+      // LOCAL_CURRENCY rows in production, so this asymmetry is currently unreachable
+      // (see verify-currency.mjs T18).
+      const comparable = currency === '' || currency.toUpperCase() === PREFERRED_CURRENCY;
 
       // Stable identity for saving Error From / Done — survives re-validation and is
       // identical for every user. Same fields as the de-dup key, plus FTYCODE.
@@ -357,8 +421,11 @@ export function runComparison(
         // and only fall back to case-insensitive string equality when either side isn't numeric.
         const numL = parseFloat(localQuoteVal);
         const numF = parseFloat(dbFobValue);
-        const lqVsAcs =
-          !isNaN(numL) && !isNaN(numF)
+        // A quote in a non-preferred currency is not comparable against a USD FOB, so no
+        // comparison is performed at all — see verdictOf / CompRow.comparable.
+        const lqVsAcs = !comparable
+          ? false
+          : !isNaN(numL) && !isNaN(numF)
             ? Math.abs(numL - numF) < 0.0001
             : localQuoteVal.toLowerCase() === dbFobValue.toLowerCase();
 
@@ -375,11 +442,16 @@ export function runComparison(
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
-          const numC = parseFloat(cFobValue);
-          cMatch =
-            !isNaN(numL) && !isNaN(numC)
-              ? Math.abs(numL - numC) < 0.0001
-              : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          // Only the comparison is currency-dependent — a non-preferred-currency quote
+          // cannot be compared against a USD Costsheet FOB, so cMatch stays null ("no
+          // verdict"), while the matched record's own metadata above is still shown.
+          if (comparable) {
+            const numC = parseFloat(cFobValue);
+            cMatch =
+              !isNaN(numL) && !isNaN(numC)
+                ? Math.abs(numL - numC) < 0.0001
+                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          }
         }
 
         // Final 3-way verdict. When Costsheet is loaded, ALL three must agree.
@@ -400,6 +472,8 @@ export function runComparison(
           fobSource,
           dbFobValue,
           localQuoteVal,
+          currency,
+          comparable,
           valueMatch: acsMatch,
           status: 'matched',
           joinKeyStr,
@@ -449,12 +523,16 @@ export function runComparison(
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
-          const numC = parseFloat(cFobValue);
-          const numL2 = parseFloat(localQuoteVal);
-          cMatch =
-            !isNaN(numL2) && !isNaN(numC)
-              ? Math.abs(numL2 - numC) < 0.0001
-              : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          // Only the comparison is currency-dependent — see the identical gate in the
+          // happy path above.
+          if (comparable) {
+            const numC = parseFloat(cFobValue);
+            const numL2 = parseFloat(localQuoteVal);
+            cMatch =
+              !isNaN(numL2) && !isNaN(numC)
+                ? Math.abs(numL2 - numC) < 0.0001
+                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
+          }
         }
 
         compRows.push({
@@ -470,6 +548,8 @@ export function runComparison(
           fobSource: 'N/A',
           dbFobValue: '',
           localQuoteVal,
+          currency,
+          comparable,
           valueMatch: false,
           status: 'noKeyMatch',
           joinKeyStr,
@@ -490,12 +570,22 @@ export function runComparison(
   });
 
   // Tally quick stats for the toolbar / toast message.
-  const matchCount = compRows.filter((r) => r.valueMatch).length;
-  const diffCount = compRows.filter((r) => r.status === 'matched' && !r.valueMatch).length;
-  const noKeyCount = compRows.filter((r) => r.status === 'noKeyMatch').length;
+  const matchCount = compRows.filter((r) => verdictOf(r) === 'match').length;
+  const diffCount = compRows.filter((r) => verdictOf(r) === 'diff').length;
+  const noKeyCount = compRows.filter((r) => verdictOf(r) === 'noKey').length;
+  const notComparedCount = compRows.filter((r) => verdictOf(r) === 'notCompared').length;
 
   // How many raw PPS rows were merged away by de-duplication (0 if none).
   const collapsedRows = rawPPSRows - compRows.length;
 
-  return { rows: compRows, matchCount, diffCount, noKeyCount, warnings, collapsedRows };
+  return {
+    rows: compRows,
+    matchCount,
+    diffCount,
+    noKeyCount,
+    warnings,
+    collapsedRows,
+    currencyFilteredRows,
+    notComparedCount,
+  };
 }

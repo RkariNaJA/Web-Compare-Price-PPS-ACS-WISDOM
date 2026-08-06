@@ -1,17 +1,20 @@
 /**
  * Pure aggregation for the Validation Summary view. Turns the current run's CompRows
- * into Match / Diff / No Key counts, grouped by factory, by season, and by (factory ×
- * season). No React — just data in, data out (so it's trivially testable).
+ * into Match / Diff / No Key / Not Compared counts, grouped by factory, by season, and
+ * by (factory × season). No React — just data in, data out (so it's trivially testable).
  *
- * Verdict mapping (identical to the results toolbar):
- *   No Key = status 'noKeyMatch'  ·  Match = valueMatch  ·  Diff = matched but not equal
+ * Verdict mapping (identical to the results toolbar, via verdictOf — see comparison.ts):
+ *   No Key = status 'noKeyMatch'  ·  Not Compared = comparable is false  ·
+ *   Match = valueMatch  ·  Diff = matched, comparable, but not equal
  */
 import type { CompRow } from './types';
+import { verdictOf, type Verdict } from './comparison';
 
 export interface VerdictCounts {
   match: number;
   diff: number;
   noKey: number;
+  notCompared: number;
   total: number;
 }
 export interface GroupCount extends VerdictCounts {
@@ -30,11 +33,9 @@ export interface Summary {
 
 const seasonOf = (r: CompRow) => r.keys.find((k) => k.aName === 'Season')?.bVal || '—';
 const factoryOf = (r: CompRow) => r.keys.find((k) => k.aName === 'FactoryCode')?.bVal || '—';
-const verdictOf = (r: CompRow): 'match' | 'diff' | 'noKey' =>
-  r.status === 'noKeyMatch' ? 'noKey' : r.valueMatch ? 'match' : 'diff';
 
-const blank = (): VerdictCounts => ({ match: 0, diff: 0, noKey: 0, total: 0 });
-const bump = (c: VerdictCounts, v: 'match' | 'diff' | 'noKey') => {
+const blank = (): VerdictCounts => ({ match: 0, diff: 0, noKey: 0, notCompared: 0, total: 0 });
+const bump = (c: VerdictCounts, v: Verdict) => {
   c[v] += 1;
   c.total += 1;
 };

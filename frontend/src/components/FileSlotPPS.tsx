@@ -27,13 +27,15 @@ interface Props {
 
 // Project a raw dbo.PPS payload down to STRICT_B_COLS and normalise SIZE_DATA,
 // mirroring what the old FileReader/XLSX path did to uploaded files.
-function toPPSRows(data: TableData): { headers: string[]; rows: Row[] } {
-  const keptIdx: number[] = [];
-  const keptHdr: string[] = [];
-  data.headers.forEach((h, i) => {
-    if (STRICT_B_COLS.includes(h)) {
-      keptIdx.push(i);
-      keptHdr.push(h);
+//Drop Column not in STRICT_B_COLS
+function toPPSRows(data: TableData): { headers: string[]; rows: Row[] } {// Function takes a table (data) and returns a new one with headers + rows
+  const keptIdx: number[] = []; //Empty list that hold Position
+  const keptHdr: string[] = []; //Empty list that hold Name
+  data.headers.forEach((h, i) => { 
+    if (STRICT_B_COLS.includes(h)) {//Check if column were in the keep list?
+      keptIdx.push(i);// Yes same position
+      keptHdr.push(h);// Yes same name
+      //else ignored or dropped
     }
   });
   const headers = [...keptHdr];
@@ -42,13 +44,14 @@ function toPPSRows(data: TableData): { headers: string[]; rows: Row[] } {
   // Preserve the raw SIZE_DATA in a shadow column ORIG_SIZE_DATA before
   // normalising, so the preview + display can still show "S" while the
   // comparison uses "ALL_REG_SIZE_RB".
+  // Will get 2 column (SIZE_DATA [data after drop some column], ORIG_SIZE_DATA[Original Column])
   const sizeIdx = headers.indexOf('SIZE_DATA');
-  if (sizeIdx !== -1) {
-    headers.push('ORIG_SIZE_DATA');
+  if (sizeIdx !== -1) { // Only run the next part IF SIZE_DATA actually exists
+    headers.push('ORIG_SIZE_DATA'); // add new column at the backup copy
     rows.forEach((r) => {
-      const orig = String(r[sizeIdx] ?? '').trim();
-      r.push(orig);
-      r[sizeIdx] = normalizeSizeToken(orig);
+      const orig = String(r[sizeIdx] ?? '').trim(); // Grab the current SIZE_DATA value, force it to text, trim spaces
+      r.push(orig); // Add that original value as the new ORIG_SIZE_DATA cell (the backup)
+      r[sizeIdx] = normalizeSizeToken(orig); // Overwrite the original SIZE_DATA cell with its cleaned-up version
     });
   }
   return { headers, rows };
@@ -121,7 +124,9 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
   // tagged with its source's colorIdx so the preview can show a coloured dot.
   const combinedPreview = (() => {
     if (!files.length) return null;
-    const headers = files[0].headers.filter((h) => h !== 'ORIG_SIZE_DATA');
+    const headers = files[0].headers.filter(
+      (h) => h !== 'ORIG_SIZE_DATA' && h !== 'INSERT_DATE',
+    );
     const previewRows: { row: Row; colorIdx: number }[] = [];
     for (const f of files) {
       const origIdx = f.headers.indexOf('ORIG_SIZE_DATA');
