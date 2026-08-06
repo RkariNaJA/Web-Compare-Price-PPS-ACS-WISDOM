@@ -312,14 +312,37 @@ def extract_size_from_cbdid(cbdid: str) -> str:
     return ''
 
 
+# Colourways beginning with this prefix (ALL_SOLID, ALL_AOP, ALL_HTR, ALL_011, …) are ONE
+# logical colourway that happens to contain an underscore — not a list of codes.
+COLORWAY_NO_SPLIT_PREFIX = 'ALL_'
+
+
 def expand_colorway_rows(base_row: list, colorway_idx: int) -> list[list]:
-    """If ColorwayCode contains underscores, split into one row per code."""
-    if colorway_idx != -1 and '_' in base_row[colorway_idx]:
+    """Split a multi-code ColorwayCode (e.g. '011_066') into one row per code.
+
+    Codes starting with `ALL_` are left intact. They are single colourways, and splitting
+    them was a real bug: 'ALL_SOLID' became two rows, 'ALL' and 'SOLID', so the join key
+    `all_solid` never existed in the ACS index. A PPS row with a blank COLOR (which the
+    frontend normalises to `all_solid`) therefore missed its exact match, fell through to
+    the no-colour fallback, and could take a *specific* colour's FOB instead — style
+    IR7874 showed 4.72 from colourway 084 rather than 3.83 from ALL_SOLID. Because
+    `SELECT *` has no ORDER BY, which colour it grabbed was not even deterministic.
+
+    This also un-breaks `normalizeJoinKey` in the frontend, which already folds `all_htr`
+    and `all_aop` into `all_solid` — folding that could never fire while those values were
+    being split apart here first.
+    """
+    if colorway_idx == -1:
+        return [base_row]
+    code = base_row[colorway_idx]
+    if code.strip().upper().startswith(COLORWAY_NO_SPLIT_PREFIX):
+        return [base_row]
+    if '_' in code:
         result = []
-        for code in base_row[colorway_idx].split('_'):
-            if code.strip():
+        for part in code.split('_'):
+            if part.strip():
                 new_row = list(base_row)
-                new_row[colorway_idx] = code.strip()
+                new_row[colorway_idx] = part.strip()
                 result.append(new_row)
         return result
     return [base_row]
