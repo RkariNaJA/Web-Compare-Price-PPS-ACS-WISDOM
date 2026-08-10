@@ -39,20 +39,54 @@ FRONTEND  Validate (comparison.ts → runComparison)
  13  verdictOf(row) → match | diff | noKey | notCompared                             §6.6
 ```
 
-### The ten rules that actually matter
+### Every core logic, by area
 
-| # | Rule | Why it exists |
-| - | ---- | ------------- |
-| 1 | **Join key = Season + Style + Colour + Factory.** Size is *not* in the key — it picks the row afterwards. | Sizes are buckets, not identities |
-| 2 | **Blank colour → `all_solid`.** So do `ALL_HTR`, `ALL_AOP`, `RETAIL`, `SOLID1`. | PPS leaves colour blank for solids |
-| 3 | **`ALL_*` colourways are ONE code, never split.** | Splitting `ALL_SOLID` destroyed the `all_solid` key → rows took another colour's FOB |
-| 4 | **De-dup key uses `ORIG_SIZE_DATA`, never `SIZE_DATA`.** | Keying the bucket merges 3XL/4XL/5XL and sizes vanish |
-| 5 | **De-dup key includes `LOCAL_QUOTE_AMOUNT`.** Different price = separate row. | A different price can be a different verdict |
-| 6 | **Currency twins collapse *before* de-dup**, grouped **without** the amount. | The amount is what differs between USD/THB twins |
-| 7 | **ACS has two FOB columns** — `FinalFOB` when the size matches, `ExtSzFOB` when it fell back. | One ACS row covers several sizes |
-| 8 | **Costsheet has two FOB columns too**, chosen by the *Costsheet row's own size*, not the PPS size. | WISDOM is one row per size; ACS is one row with two columns |
-| 9 | **MAX(First Input Date) is computed *within* the size-matched subset**, not across all candidates. | Otherwise a newer XL record beats the S record you asked for |
-| 10 | **Derive verdicts with `verdictOf()`.** Never re-implement it. | It was copied in 4 places; a 4th state couldn't be added consistently |
+Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the order the pipeline hits it.
+
+#### A. ACS side (`dbo.ACS`) — 5
+
+- **1 · Derive `EXTRACTED_SIZE`** — ACS never stores size in its own column; it is read off the tail of `CBDID` (last two dash-segments joined with `_`: `…-ALL_REG_SIZE-RB` → `ALL_REG_SIZE_RB`) and appended as a virtual column by the backend. `sql_backend.py` §4.2
+  - ⚠️ The frontend has a **second** extractor (`extractSizeFromCBDID` in `normalize.ts`) that takes segments 6-onward instead. They agree on today's 7-segment CBDIDs and diverge on anything shorter or longer. The backend one builds the matching key; the frontend one only picks the FOB column.
+- **2 · Expand multi-code colourways** — `011_066` is two colourways, so the backend emits one row per code. **`ALL_*` (`ALL_SOLID`, `ALL_AOP`, `ALL_HTR`, …) is ONE code and is never split** — splitting it destroyed the `all_solid` key and rows silently took another colour's FOB. §4.3
+- **3 · Two hash indexes, built once per run** — keyed on **Season + Style + Colour + Factory** (`JOIN_KEY_PAIRS`), plus a **no-colour** variant on Season + Style + Factory. Size is *not* in either key. §6.1
+- **4 · Pick one ACS row per PPS row — 5-tier size fallback** — exact `EXTRACTED_SIZE` → token overlap (split on `_`/`-`) → substring → any row that isn't a `reg_size` row (only when the query isn't `ALL_REG_SIZE_RB`) → first candidate. This is how a PPS `S` legitimately matches an ACS `ALL_REG_SIZE_RB` row. §6.3
+  - The **no-colour index is used only when** the full key found nothing **and** the PPS colour normalises to `all_solid`. (The Costsheet falls back unconditionally — see C·3.)
+- **5 · Pick the ACS FOB column** — ACS carries two: `FinalFOB` when the PPS size equals the CBDID-derived size, `ExtSzFOB` when it doesn't (i.e. the size fell back). One ACS row can price several sizes. §6.4
+
+#### B. PPS side (`dbo.PPS`) — 5
+
+- **1 · Strip to `STRICT_B_COLS` + shadow the size** — on load, everything outside `STRICT_B_COLS` is dropped; the raw size is copied into **`ORIG_SIZE_DATA`** and `SIZE_DATA` is overwritten with its bucket (`S`/`M`/`L` → `ALL_REG_SIZE_RB`, `3XL-T` → `ALL_EXTEND_SIZE_RB`). `LOCAL_CURRENCY` and `INSERT_DATE` are in that list *because* B·2 and B·3 need them. §6.2
+- **2 · Collapse currency twins (`preferUSDRows`) — runs FIRST** — `dbo.PPS` quotes the same price once per currency (4.00 USD *and* 124.00 THB). Group on Season + Style + Colour + `ORIG_SIZE_DATA` — **no amount**, because the amount is the very thing that differs — and keep only `PREFERRED_CURRENCY` when the group has it. A THB-only group passes through untouched. ↑ top
+- **3 · Collapse quote history (`dedupePPSRows`) — runs SECOND** — `dbo.PPS` is an append-only log (~4× redundant rows). Key = Season + Style + Colour + **`ORIG_SIZE_DATA`** + **`LOCAL_QUOTE_AMOUNT`**, newest `INSERT_DATE` wins. `ORIG_SIZE_DATA` (not the bucket) is what keeps all 9 sizes alive; the amount is in the key so a genuinely different price stays a separate row. ↑ top
+- **4 · Flag comparability** — a row is comparable when `LOCAL_CURRENCY` is USD **or blank**. A non-USD quote can't be compared against a USD FOB, so its comparison is **skipped**, not failed → verdict `notCompared`, and it never inflates Diff.
+- **5 · Build the stable `rowKey`** — `FTYCODE | Season | Style | Colour | ORIG_SIZE | amount`, trimmed + lowercased. Same fields as the de-dup key plus factory, so a saved Error From / Done annotation maps back to exactly one row after every re-validation. `comparison.ts` → `makeRowKey`
+
+#### C. WISDOM / Costsheet side (`dbo.VIEW_COSTSHEET_WISDOM`) — 5
+
+- **1 · Resolve headers by alias** — the view gets renamed columns, so each logical column (`fob`, `extFob`, `date`, …) is matched against `C_KEY_ALIASES` after dropping spaces/underscores/dots/hyphens. A missing *critical* column is a **warning, not a crash** — the 3-way check degrades to 2-way. `costsheet.ts`
+- **2 · Normalise bare group sizes** — `ALL_REG_SIZE` / `ALL_EXTEND_SIZE` gain the `_RB` suffix so they line up with how ACS and PPS spell the same buckets.
+- **3 · Two indexes, same shape as ACS** — full key (Season + Style + Colour + Factory) and a no-colour key. Here the no-colour fallback fires **whenever the full key misses**, with no `all_solid` precondition. §6.5
+- **4 · Pick the Costsheet FOB column per row, by the row's OWN size** — `Extended Size FOB` when `normalizeCostsheetSizeToken` says extended, else `Final FOB`. That resolver checks `EXTEND_SIZE` **first**, so `4X` and `48` (present in *both* size lists) price as extended here while still matching as regular. It decides the **column only** — never the matching key. §6.5
+- **5 · Size-filter, then MAX(First Input Date) *within* that subset** — 3-tier size filter (exact `szNorm` → token/substring → all candidates), then the latest date wins **inside the size-matched set**, so a newer XL record can't beat the S record you asked for. The backend's `ORDER BY date DESC, version DESC` exists only to break **date ties** (first-seen wins on a tie). An extended row whose `Extended Size FOB` is blank is reported **unmatched** rather than falling back to `Final FOB`. §6.5
+  - The Costsheet lookup runs **even when ACS found nothing**, so a `noKey` row still displays its WISDOM record.
+
+#### D. The comparison & verdict — 4
+
+- **1 · Compare numerically, with an epsilon** — `Math.abs(a - b) < 0.0001`, so `2.8` vs `2.7999999` is a Match. Case-insensitive string equality only when either side isn't a number.
+- **2 · Three-way when File C is loaded, two-way when it isn't** — with WISDOM loaded, `LOCAL_QUOTE_AMOUNT` must equal **both** FOBs. Without it, only ACS is checked. §6.6
+- **3 · `cMatch` is three-valued** — `true` / `false` (found but different) / **`null`** (no Costsheet row at all → renders "No CS"). Collapsing null into false would report a missing record as a price error.
+- **4 · Derive every verdict through `verdictOf()`** — `noKey` (no ACS row) → `notCompared` (not comparable) → `match` / `diff`, checked in that order, in **one** function. The table, Summary donut, CSV export and toolbar counts all call it; it used to be copy-pasted in four places, which is why a fourth state couldn't be added consistently. §6.6
+
+#### E. Shared normalisation (`normalize.ts`) — 3
+
+- **1 · `normalizeJoinKey`** — strips *all* whitespace, lowercases, and folds blank / `ALL_HTR` / `ALL_AOP` / `RETAIL` / `SOLID1` colour into one **`all_solid`** bucket. Every key on every side goes through it, which is the only reason the three sources join at all.
+- **2 · Two size resolvers, deliberately not one** — `normalizeSizeToken` (REG checked first; shared by PPS bucketing **and** ACS/Costsheet matching) vs `normalizeCostsheetSizeToken` (EXTEND first; Costsheet FOB-column choice only). They differ *only* for `4X` and `48`.
+- **3 · Date handling** — `parseDate` accepts SQL strings and Excel serials (`25569`-day epoch offset) and returns `null` on junk so that record can't win a MAX. The winner's date is formatted from `getFullYear/Month/Date` — **not** `toISOString()`, which shifted Bangkok dates back a day.
+
+#### F. Persistence & access control — 2
+
+- **1 · Annotations save is also the audit trail** — `annotations_db.save()` upserts Error From / Done keyed by `(scope, rowKey)`, **deletes** a row the user blanked, keeps the original `saved_by` when nothing actually changed, and returns a per-field **old → new diff** that the save route writes to `change_log`. One shared `scope` today; per-group versions need no schema change. 🔐
+- **2 · Identity ≠ permission** — AD proves *who you are* (an LDAP bind; no password is ever stored or compared), `AD_ALLOWED_GROUPS` decides *whether you may log in*, and the app's **own** groups decide what you may do: `resolve_perms()` unions `can_edit` / `can_manage` most-permissively across your groups, `INITIAL_ADMINS` is always full admin, and **no group = read-only**. Permissions are resolved **at login** and enforced server-side (`@login_required` / `@require_edit` / `@require_manage`) — hiding a button is cosmetic. 🔐
 
 ### Landmines — every one of these has actually bitten
 
