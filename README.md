@@ -2,11 +2,182 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-08-06 · **Original author / design contact:** admin@example.com
+**Last updated:** 2026-08-20 · **Original author / design contact:** admin@example.com
 
 ---
 
-## 📌 CORE LOGIC — read this before changing anything
+## Table of Contents
+
+### Part 1 — Start here
+
+| # | Section | Read it when |
+| - | ------- | ------------ |
+| | [First run — zero to a working dashboard](#first-run--zero-to-a-working-dashboard) | You have never run this before |
+| | [CORE LOGIC — read before changing anything](#core-logic) | Before you touch comparison logic |
+
+### Part 2 — Critical behaviour
+
+These four bite people. Each one has actually caused an incident.
+
+| Section | Read it when |
+| ------- | ------------ |
+| [The host PC's IP changed](#when-the-host-pcs-ip-changes) | Users suddenly cannot reach the dashboard |
+| [PPS de-duplication](#pps-de-duplication) | Row counts or sizes look wrong |
+| [Authentication (AD login + session)](#authentication--ad-login-and-sessions) | Anything to do with logins or permissions |
+| [Production go-live checklist](#production-go-live-checklist) | Before any real user logs in |
+
+### Part 3 — Reference
+
+| # | Section | # | Section |
+| - | ------- | - | ------- |
+| 0 | [File Map — which file does what](#0-file-map--which-file-does-what) | 7 | [UI Behaviour](#7-ui-behaviour) |
+| 1 | [Purpose & Business Context](#1-purpose--business-context) | 8 | [Known Gotchas & Fixed Bugs](#8-known-gotchas--fixed-bugs) |
+| 2 | [High-Level Architecture](#2-high-level-architecture) | 9 | [Running the Project](#9-running-the-project) |
+| 3 | [Data Sources](#3-data-sources) | 10 | [Hosting on the Internal Network](#10-hosting-on-the-internal-network) |
+| 4 | [Backend (`sql_backend.py`)](#4-backend-sql_backendpy) | 11 | [Extending the App](#11-extending-the-app) |
+| 5 | [Frontend Architecture](#5-frontend-architecture) | 12 | [Troubleshooting](#12-troubleshooting) |
+| 6 | [Domain Logic — Deep Dive](#6-domain-logic--deep-dive) | | |
+
+---
+
+# Part 1 — Start here
+
+## First run — zero to a working dashboard
+
+Never run this before? Start here. Everything below is **local dev on one Windows PC**, which is the
+only setup you should use to get familiar. For the shared-PC deployment see §10.2, and for the
+production entry point see §9.2b.
+
+**Two terminals stay open the whole time** — one for the backend, one for the frontend. Neither is a
+background service in dev.
+
+### Before you start
+
+| Need                                        | Check it with                       |
+| ------------------------------------------- | ----------------------------------- |
+| Python 3.9+                                 | `python --version`                  |
+| Node 18+                                    | `node --version` · `npm --version`  |
+| Microsoft ODBC Driver 17 or 18 for SQL Server | `odbcconf /Q /S` or check Installed Apps |
+| A Windows account with `SELECT` on `dbo.ACS` and `dbo.VIEW_COSTSHEET_WISDOM` | ask a DBA if unsure |
+
+The DB is reached with **Windows integrated auth** (`Trusted_Connection=yes`), so SQL Server sees
+*the account running the backend* — not whoever logs into the dashboard. If your own account lacks
+`db_datareader`, no amount of dashboard config fixes it.
+
+### Step 1 — backend config
+
+```powershell
+cd "DashBoard"
+copy .env.example .env
+```
+
+Then open `.env`. To get in the door the first time, the only thing you need is the **local dev
+account** — leave AD off until the app works:
+
+```
+AD_ENABLED=false
+LOCAL_AUTH_ENABLED=true
+LOCAL_AUTH_USER=<pick one>
+LOCAL_AUTH_PASSWORD=<pick one>
+LOCAL_AUTH_GROUP=<any name>
+```
+
+Everything else can stay at its default for local work. Full table of every variable is in
+**Configuration (all in `DashBoard/.env`)**.
+
+> ⚠️ `LOCAL_AUTH_ENABLED=true` bypasses Active Directory completely. It is for local work only —
+> the go-live checklist requires turning it off.
+
+### Step 2 — backend
+
+```powershell
+cd "DashBoard"
+py -m pip install -r requirements.txt
+py .\serve.py
+```
+
+**Working looks like:** `* waitress serving on http://0.0.0.0:5001 (8 threads)`. Open
+<http://localhost:5001> and you should get a plain HTML health message — **not** the dashboard. The
+dashboard is served separately in step 3.
+
+`serve.py` is the entry point to use — it runs the app under **waitress**, which is multi-threaded.
+`py sql_backend.py` also works but starts Flask's built-in dev server: single-threaded, so one slow
+ACS fetch blocks every other user. Only reach for it when you want Flask's reloader while editing
+backend code. Host, port and thread count come from `SERVE_HOST` / `SERVE_PORT` / `SERVE_THREADS`
+(defaults `0.0.0.0` · `5001` · `8`).
+
+> ⚠️ **`serve.py` never hot-reloads.** Waitress imports the module once, so a corrected `.py` on
+> disk changes nothing until you `Ctrl+C` and restart. This has cost 21 minutes of debugging
+> against stale code once already.
+
+If it fails here, it is almost always one of the three DB errors in §9.2 (missing ODBC driver, no
+`SELECT` permission, or the host unreachable). Fix it before moving on — the frontend cannot mask a
+backend that will not start.
+
+### Step 3 — frontend, in a second terminal
+
+The frontend is served as a **static production build**, not by the Vite dev server:
+
+```powershell
+cd "DashBoard\frontend"
+npm install
+npm run build
+py -m http.server 8080 --directory dist
+```
+
+**Working looks like:** `Serving HTTP on :: port 8080`. Open <http://localhost:8080>.
+
+`npm run build` is **not optional on a fresh copy** — `dist/` is git-ignored
+(`frontend/.gitignore`), so a clone has none and `--directory dist` would serve a 404 into a blank
+page. It also runs `tsc -b` first, so any TypeScript error stops the build.
+
+> ⚠️ **`dist/` is compiled output.** Editing `frontend/src/` changes nothing that is already being
+> served until you re-run `npm run build`. **Delete the old `dist/` first** — Vite hashes filenames,
+> so merging a new build into an old folder leaves stale bundles behind.
+
+There is **no `frontend/.env` in the repo and you do not need one.** With `VITE_BACKEND_URL` unset,
+the API base is built at runtime as `http://<the host serving the page>:5001`, so a page served from
+`localhost:8080` calls `localhost:5001` by itself, and a colleague loading it by your machine's name
+gets a backend on that same name (§9.3). Note this is **baked in at build time** — if you ever do set
+`VITE_BACKEND_URL`, you must re-run `npm run build` for it to take effect.
+
+Front end on **8080**, backend on **5001** — two different origins, so every API call is
+cross-origin. It works because Flask runs CORS with credentials enabled and the frontend sends
+`credentials: 'include'`; that is also why `CORS_ALLOWED_ORIGINS` must be pinned before go-live
+rather than left reflecting the caller.
+
+**Developing instead of just running?** Use `npm run dev` (port 5173) for hot module reload — same
+backend, no rebuild step. §9.3 covers it.
+
+### Step 4 — log in and confirm it really works
+
+1. Open <http://localhost:8080>. You should land on a **login page**, not the table — if you see the
+   table without logging in, something is wrong with the auth wiring.
+2. Sign in with the `LOCAL_AUTH_USER` / `LOCAL_AUTH_PASSWORD` from step 1.
+3. Click **Load ACS from DB**. Rows appearing is the real proof: it means the browser reached Flask
+   *and* Flask reached SQL Server *and* your session cookie was accepted.
+4. Drag a PPS `.xlsx` onto the upload strip. Verdicts appear once both sides are present.
+
+If step 3 shows `Error: HTTP 0`, the frontend cannot reach the backend at all — check terminal 1 is
+still running on 5001. A red toast with a SQL message means the opposite: Flask is fine, the
+database is not. A **blank page** with `GET / 404` in terminal 2 means `dist/` is missing or
+`--directory dist` was omitted — go back and run `npm run build`.
+
+### Stopping
+
+`Ctrl+C` in each terminal. Nothing is left running, and nothing needs cleaning up — the only file the
+app writes is `annotations.db`.
+
+> 🚫 **Do not copy `annotations.db` between machines.** It holds annotations, groups *and* login
+> history in one per-machine, git-ignored file; overwriting it silently destroys whichever side you
+> replaced. This has already cost one set of tester logins.
+
+**Next:** §9 for the full run reference · §10 for internal-network hosting · §10.7 for a table of
+first-run errors and fixes · the go-live checklist before any real user logs in.
+
+---
+
+## Core logic
 
 Everything the app does, in one page. Each rule links to its full section. **Order of operations is the whole game** — most bugs found so far were one step running before or after the step it depended on.
 
@@ -115,7 +286,12 @@ Full file-by-file map: [§0](#0-file-map--which-file-does-what) · Task → file
 
 ---
 
-## ⚠️ Read first — the dashboard breaks when the host PC's IP changes
+# Part 2 — Critical behaviour
+
+Four behaviours that have each caused a real incident. Skim all four once; come back to them
+when something looks wrong.
+
+## When the host PC's IP changes
 
 **TL;DR:** The backend URL is baked into the frontend at _build_ time. If the host PC's LAN IP changes, edit `frontend/.env`, rebuild, and restart both servers. Permanent fix: ask IT for a DHCP reservation.
 
@@ -131,8 +307,8 @@ Full file-by-file map: [§0](#0-file-map--which-file-does-what) · Task → file
 2. Edit `frontend/.env` → `VITE_BACKEND_URL=http://<new-ip>:5001`.
 3. Rebuild — `cd frontend` then `npm run build`.
 4. Restart **both** servers (they are plain console windows and do **not** auto-restart after a reboot):
-   - Backend: `python sql_backend.py` (or `python serve.py` once you're on waitress — §9.2b) : [py -m pip install -r requirements.txt] first if you cant run the Backend
-   - Frontend: `python -m http.server 8080 --directory dist` : [NPM INSTALL] first if you cant run the Frontend
+   - Backend: `py .\serve.py` (run `py -m pip install -r requirements.txt` first if it will not start)
+   - Frontend: `py -m http.server 8080 --directory dist` (run `npm install` + `npm run build` first if `dist/` is missing)
 5. Tell users the new URL: `http://<new-ip>:8080`.
 
 **Do NOT** use the machine hostname (`<HOSTNAME>.example.local`) as the backend URL — DNS also returns the WSL virtual adapter (`<WSL_ADAPTER_IP>`), which other machines can't reach, causing flaky/hanging requests.
@@ -141,7 +317,7 @@ Full file-by-file map: [§0](#0-file-map--which-file-does-what) · Task → file
 
 ---
 
-## 🚨 IMPORTANT — PPS de-duplication: how duplicates are removed while ALL sizes are kept
+## PPS de-duplication
 
 > **⚠️ Before touching `comparison.ts` or the results table, read this.**
 > The de-dup key **MUST** use `ORIG_SIZE_DATA` (the raw size), **NOT** the normalized `SIZE_DATA`.
@@ -191,7 +367,7 @@ The amount is excluded **because it is the very thing that differs between twins
 
 ---
 
-## 🔐 VERY IMPORTANT — Authentication (AD login + session): how it actually works
+## Authentication — AD login and sessions
 
 > **Added 2026-07-16.** The whole dashboard now sits behind a login. The moving parts
 > (browser **cookie** ↔ Flask **session** ↔ **Active Directory**) are easy to mix up, so
@@ -202,37 +378,21 @@ The amount is excluded **because it is the very thing that differs between twins
 > do once signed in_ is now controlled by **app-managed groups** (edit vs read-only, plus who
 > can administer groups). See **"Per-group roles"** below.
 
-### TL;DR (the whole thing in 6 lines)
+### How it works
 
-1. Nobody sees the app until they sign in.
-2. The browser sends the typed **username + password** to the backend's `POST /login`.
-3. The backend checks them — **local dev account first, then Active Directory (AD)**.
-4. On success the backend returns a **session cookie**; the browser re-sends that cookie on
-   every later request — that's how the backend knows you're logged in.
-5. Every data endpoint returns **401 (refuses)** unless that cookie is present.
-6. Once in, **what you can do** (view only, save, or administer groups) depends on your
-   **app-group permissions** — see "Per-group roles" below.
+**Nobody sees the app until they sign in,** and every data endpoint returns **401** unless a valid
+session cookie is present (`@login_required` in `sql_backend.py`).
 
-### The simplest version — who actually checks the password
+**The dashboard never checks your password — it borrows it and tries to log in to AD with it.**
+Like a doorman who does not inspect your key but walks to the door and tries it in the lock: opens →
+you are who you say. That attempt is called a **bind**, and it is the only step that matters. So
+there is **no password comparison anywhere in our code** — nothing stored, nothing hashed, nothing
+compared. We ask AD a yes/no question and believe the answer.
 
-**The dashboard never checks your password. It borrows it and tries to log in to AD with it.**
-If AD lets it in, the password was right. That's the whole idea.
+AD is contacted **only** when someone clicks Sign In (`POST /login`) — not at startup, not in the
+background. Each login opens a connection, asks, and hangs up. No pool, no long-lived session.
 
-> **Like a doorman testing your key.** You tell him your name and hand him your key. He doesn't
-> inspect the key — he walks to your door and **tries it in the lock**. Opens → he lets you in.
-> Doesn't open → he turns you away. He never learns what your key is shaped like; he only finds out
-> whether it works. AD is the lock. Trying the key in the lock is called a **bind**, and it is the
-> only step that matters — everything else is small talk.
-
-So there is **no password comparison anywhere in our code**. Nothing is stored, nothing is hashed,
-nothing is compared. We ask AD a yes/no question and believe the answer.
-
-**When do we talk to AD?** Only at the moment someone clicks Sign In (`POST /login`). Not at server
-startup, not in the background. Each login opens a connection, asks, and hangs up — like making a
-phone call, not like leaving a line open. There is no connection pool and no long-lived session
-against AD.
-
-**What happens, in order** (all of it in `auth_ad.py`):
+**What happens, in order** (all in `auth_ad.py`):
 
 | # | Step                                        | Function              | Talks to AD? |
 | - | ------------------------------------------- | --------------------- | ------------ |
@@ -242,36 +402,49 @@ against AD.
 | 4 | Check those groups against our allow-list   | `is_group_allowed()`  | No — plain text matching |
 | 5 | Hang up                                     | `connection.unbind()` | Yes — in a `finally`, always runs |
 
-Only **two lines in the whole project touch the network**: the `Connection(...)` in `bind_ad_user()`
-(the connect + StartTLS + bind) and the `connection.search(...)` in `read_ad_profile()`. Step 1 is
-the one people mistake for "connecting" — it isn't; it just writes down the address.
+Only **two lines in the project touch the network**: the `Connection(...)` in `bind_ad_user()` and
+the `connection.search(...)` in `read_ad_profile()`. Step 1 is the one people mistake for
+connecting — it only writes down the address.
 
-**No service account.** Because we bind as the user, we're already authenticated — so the very same
-connection is reused to read their groups. That's why `.env` holds no bind DN and no bind password:
-there is no extra credential to configure, and none to rotate later.
+**No service account.** Because we bind *as the user*, that same authenticated connection is reused
+to read their groups. Hence `.env` holds no bind DN and no bind password — no extra credential to
+configure, none to rotate.
 
-**Why port 389 when we said it's encrypted?** Two ways exist to encrypt LDAP, and we use the second:
+**Why port 389 when we said it is encrypted?** Two ways exist to encrypt LDAP and we use the second:
+LDAPS on **636** is encrypted from the first byte (`AD_USE_SSL`); **StartTLS on 389** starts plain
+and **upgrades before anything secret is sent** (`AD_START_TLS`). 389 is normally the *unencrypted*
+port, which is why the config looks wrong at a glance. It is fine.
 
-| Way          | Port | How it works                                                              |
-| ------------ | ---- | ------------------------------------------------------------------------- |
-| LDAPS        | 636  | Encrypted from the very first byte (`AD_USE_SSL=true`)                    |
-| **StartTLS** | 389  | Starts plain, then **upgrades to encrypted before anything secret is sent** (`AD_START_TLS=true`) |
+### The login flow
 
-389 is normally the *unencrypted* port, which is why the config looks wrong at a glance. It's fine —
-the upgrade happens before the password is sent.
+1. **Page loads** → React calls `GET /me`. No cookie → **401** → login page.
+2. **User submits** → `POST /login` with `credentials:'include'` so the cookie can be set and sent.
+3. **`authenticate()`** runs in this order:
+   - **Local dev account** — if `LOCAL_AUTH_ENABLED` and the credentials match `LOCAL_AUTH_USER` /
+     `LOCAL_AUTH_PASSWORD` → pass (source = `local`). The offline/dev path.
+   - **Active Directory** — otherwise, if `AD_ENABLED`, bind as `username@domain` over StartTLS. AD
+     checks the password, then `memberOf` is read.
+   - Either path then checks **`AD_ALLOWED_GROUPS`**.
+4. **Success** → user saved in a **server-side session**; a **signed cookie** goes back (an opaque
+   ID — no password inside). React swaps the login page for the app.
+5. **Failure** → **401 "Invalid username or password"** — one generic message, so we never reveal
+   whether the username exists.
+
+**The cookie** is HttpOnly (JavaScript cannot read it), **signed** with `FLASK_SECRET_KEY` (cannot be
+forged or edited), lasts `SESSION_LIFETIME_DAYS` (default 1), and is `Secure` only when
+`COOKIE_SECURE=true`. It holds nothing but a reference — username and groups live in the Flask
+session on the server. So **"logged in" = "the browser is sending a valid session cookie."**
+`POST /logout` clears the session, leaving the cookie pointing at nobody.
 
 ### Three things this does NOT mean
 
-Easy to over-read "AD decides". Three limits, and two of them are go-live items:
-
 1. **AD is not the only way in.** The **local account is tried first**, before AD is contacted at
-   all — so while `LOCAL_AUTH_ENABLED=true`, one login bypasses AD entirely. Intended for offline
-   dev; **set `false` before real users** (go-live item A4).
-2. **AD says "this person is real", not "this person is allowed."** A second gate follows:
-   `AD_ALLOWED_GROUPS`. **Empty means allow everyone** — i.e. anyone with a working account anywhere
-   in the domain can sign in, not just your team. That may be exactly what you want; just make it a
-   deliberate decision rather than a default.
-3. **AD does not decide what you can _do_.** Identity and permissions are separate systems here:
+   all — so while `LOCAL_AUTH_ENABLED=true`, one login bypasses AD entirely. Set it `false` before
+   real users (go-live item A4).
+2. **AD says "this person is real", not "this person is allowed."** `AD_ALLOWED_GROUPS` is the second
+   gate, and **empty means allow everyone** — anyone with a working account anywhere in the domain.
+   That may be what you want; make it deliberate rather than a default.
+3. **AD does not decide what you can _do_.** Identity and permissions are separate systems:
 
 | Question                        | Who decides                                     |
 | ------------------------------- | ----------------------------------------------- |
@@ -280,76 +453,27 @@ Easy to over-read "AD decides". Three limits, and two of them are go-live items:
 | May you **save** edits?         | **The app's own groups** (`groups_db`) — not AD |
 | May you **administer** groups?  | **The app's own groups** (`groups_db`) — not AD |
 
-The honest one-liner: **AD decides who you are; the app decides what you can touch.** A logged-in
-user in no app group is **read-only**, and `INITIAL_ADMINS` is what gives the first person full
-rights before any groups exist. See "Per-group roles" below.
+**AD decides who you are; the app decides what you can touch.** A logged-in user in no app group is
+**read-only**; `INITIAL_ADMINS` is what gives the first person full rights before any groups exist.
 
-### The two "hops" — this is the part people confuse
+### The two "hops" — the part people confuse
 
-There are **two separate connections**, and they're encrypted by **different** things:
-
-- We need 2 hop because the browser can't talk to AD directly(They speak different language)
-- The backend is the translator. so it need to get the password from the browser and translate it to AD
-
-```
- Browser  --(hop 1: password + cookie)-->  Flask backend  --(hop 2: AD bind)-->  Active Directory
-           \___ secured by HTTPS(Not encrpyted) ___/          \___ secured by StartTLS(encrpyted) ___/
-           \___ Frontend => Backend (HTTPS) ___/                      \___ Backend => AD (LDAP) ___/
-
- TODAY (dev):
- Browser  --(hop 1: password + cookie, plain HTTP — NOT encrypted)-->  Flask backend
- Flask backend  --(hop 2: AD bind, StartTLS — encrypted)-->  Active Directory
-
- GOAL (production):
- Browser  --(HTTPS)-->  Reverse proxy (frontend + backend behind one FQDN)
- Flask backend  --(StartTLS)-->  Active Directory
-```
-
-> Note: the protocol belongs to the **connection**, not the machine — hop 1 is one
-> connection, so it's either all HTTP or all HTTPS. Strictly the browser also loads the
-> page itself (HTML/JS) from the frontend server first; that leg must be HTTPS too,
-> otherwise tampered JS could steal the password before it's ever sent. Putting frontend
->
-> - backend behind one HTTPS reverse proxy fixes both legs at once.
+The browser cannot talk to AD directly; the backend is the translator. So there are **two separate
+connections, encrypted by different things**:
 
 | Hop                     | Carries                                            | Secured by                         | Status today                              |
 | ----------------------- | -------------------------------------------------- | ---------------------------------- | ----------------------------------------- |
 | **1 — Browser → Flask** | the typed password, then the session cookie        | **HTTPS** (TLS on the web server)  | **Plain HTTP in dev — NOT encrypted yet** |
-| **2 — Flask → AD**      | the LDAP "bind" that verifies the password with AD | **StartTLS** (`AD_START_TLS=true`) | **Already encrypted**                     |
+| **2 — Flask → AD**      | the LDAP bind that verifies the password with AD   | **StartTLS** (`AD_START_TLS=true`) | **Already encrypted**                     |
 
-> ⚠️ The #1 confusion: `AD_START_TLS` only protects **hop 2**. It does **nothing** for the
-> password on **hop 1**. Hop 1 becomes encrypted when we put **HTTPS** on the server — and
-> only then do we set `COOKIE_SECURE=true`.
+> ⚠️ **The #1 confusion:** `AD_START_TLS` protects **hop 2 only**. It does **nothing** for the
+> password on hop 1. Hop 1 becomes encrypted when HTTPS is put on the server — and only then do you
+> set `COOKIE_SECURE=true`.
 
-### The login flow, step by step
-
-1. **Page loads.** React calls `GET /me` ("is there a valid session?"). No cookie yet → **401**
-   → the **login page** is shown.
-2. **User submits** username + password → React does `POST /login` with `credentials:'include'`
-   (so the cookie can be set/sent).
-3. **Backend `authenticate()`** (in `auth_ad.py`) runs, in this order:
-   - **Local dev account** — if `LOCAL_AUTH_ENABLED` and the creds equal `LOCAL_AUTH_USER` /
-     `LOCAL_AUTH_PASSWORD` → pass (source = `local`). This is the offline/dev path.
-   - **Active Directory** — otherwise, if `AD_ENABLED`, it **binds** to AD as
-     `username@example.local` over StartTLS. AD itself checks the password. If OK, it reads
-     the user's profile + groups (`memberOf`).
-   - Either path then checks **`AD_ALLOWED_GROUPS`** (empty = everyone allowed).
-4. **Success** → the backend saves the user in a **server-side session** and returns a **signed
-   cookie** (just an opaque ID — no password inside). React swaps the login page for the app.
-5. **Failure** → **401 "Invalid username or password"** (one generic message; we never reveal
-   whether the username exists).
-
-### What "session" and "cookie" actually mean here (plain version)
-
-- A **cookie** is a small token the browser stores and **automatically attaches to every future
-  request** to the backend. Ours is:
-  - **HttpOnly** — JavaScript cannot read it (so a malicious script can't steal it).
-  - **Signed** with `FLASK_SECRET_KEY` — the browser can't forge or edit it.
-  - **1-day lifetime** (`SESSION_LIFETIME_DAYS`) — after that you sign in again.
-  - **Secure** only when `COOKIE_SECURE=true` (turn on once HTTPS is live).
-- The cookie holds only a reference; the real user info (username, groups) lives in the Flask
-  session on the server. So **"logged in" = "the browser is sending a valid session cookie."**
-- **Logout** (`POST /logout`) clears the session, so the cookie maps to nobody anymore.
+The protocol belongs to the **connection**, not the machine, so hop 1 is all-HTTP or all-HTTPS.
+The browser also loads the page itself from the frontend server first, and that leg must be HTTPS
+too — otherwise tampered JS could steal the password before it is ever sent. Putting frontend and
+backend behind **one HTTPS reverse proxy** fixes both legs at once.
 
 ### Which file does what
 
@@ -491,7 +615,7 @@ text — prune later if it ever grows).
 
 ---
 
-## 🚀 Need to fix when go full live (production go-live checklist)
+## Production go-live checklist
 
 > Get a name for internal Link(FQDN) -> get a certificate for that name -> enable HTTPS with it -> Hop 1 is now encrypted  
 > **Status: NOT done yet.** Today the app runs as two dev terminals over plain **HTTP** with the
@@ -573,31 +697,15 @@ Frontend + backend become the **same origin** → the session cookie just works 
 
 ---
 
-## Table of Contents
+# Part 3 — Reference
 
-0. [File Map — which file does what](#0-file-map--which-file-does-what)
-1. [Purpose & Business Context](#1-purpose--business-context)
-2. [High-Level Architecture](#2-high-level-architecture)
-3. [Data Sources](#3-data-sources)
-4. [Backend (`sql_backend.py`)](#4-backend-sql_backendpy)
-5. [Frontend Architecture](#5-frontend-architecture)
-6. [Domain Logic — Deep Dive](#6-domain-logic--deep-dive)
-7. [UI Behaviour](#7-ui-behaviour)
-8. [Known Gotchas & Fixed Bugs](#8-known-gotchas--fixed-bugs)
-9. [Running the Project](#9-running-the-project)
-10. [Hosting on the Internal Network](#10-hosting-on-the-internal-network)
-11. [Extending the App](#11-extending-the-app)
-12. [Troubleshooting](#12-troubleshooting)
-
-Appendices: [A — File-level comment map](#appendix-a--file-level-comment-map) · [B — Legacy `index.html`](#appendix-b--legacy-indexhtml)
-
----
+Look-up material. Nothing here needs reading front to back.
 
 ## 0. File Map — which file does what
 
 **TL;DR:** One line per file, whole project, in one place. Backend is Python in `DashBoard/`; frontend is React/TypeScript in `DashBoard/frontend/src/`. If you only remember one rule: **pure logic lives in `frontend/src/lib/`, all React state lives in `App.tsx`, and every HTTP route lives in `sql_backend.py`.**
 
-Deeper write-ups for each area: backend → [§4.0](#40-backend-files-infrastructure) · frontend → [§5.2](#52-file-infrastructure-for-frontend) · suggested reading order → [Appendix A](#appendix-a--file-level-comment-map).
+Deeper write-ups: backend internals → [§4.0](#40-backend-files-infrastructure) (a paragraph per module — schemas, WAL, permission timing). Suggested reading order is in §0.4 below.
 
 ### 0.1 Backend — `DashBoard/*.py`
 
@@ -664,6 +772,11 @@ Run: `python -m pytest tests/ -v`
 | `styles/tokens.css`             | CSS variables — palette, type scale, spacing. Change the theme here.                |
 | `styles/global.css`             | Component classes.                                                                  |
 
+> **Reading order for a full picture:** every `.ts`/`.tsx` file carries a top-of-file JSDoc block.
+> Read `lib/types.ts` → `constants.ts` → `normalize.ts` → `costsheet.ts` → `comparison.ts` →
+> `csv.ts` → `api.ts` → `App.tsx` → components (`Header` → `UploadStrip` → `FileSlot*` →
+> `KeyInfoPanel` → `ResultsToolbar` → `ResultsTable`) → `hooks/`.
+
 ### 0.5 Frontend — build config (`frontend/`)
 
 | File                    | What it does                                                                  |
@@ -682,7 +795,7 @@ Run: `python -m pytest tests/ -v`
 | Path                       | What it is                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
 | `README.md`                | **This file** — the full handover documentation.                                                   |
-| `HTML Version/`            | The original single-file HTML app this project grew out of (`index.html`, plus `Version1/2` and `Debug` snapshots). Kept as a reference/fallback — see [Appendix B](#appendix-b--legacy-indexhtml). **New features go in the React app, not here.** |
+| `HTML Version/`            | The original single-file HTML app this project grew out of (`index.html`, plus `Version1/2` and `Debug` snapshots). Kept as a reference/fallback. **New features go in the React app, not here.** |
 | `infrastructure Document/` | The handover PDFs (EN + TH).                                                                        |
 | `docs/`                    | `superpowers/plans` and `superpowers/specs` — working plan/spec notes from Claude Code sessions. Not app code. |
 | `.gitignore`               | Keeps `.env`, `annotations.db`, `node_modules/`, and build output out of git.                       |
@@ -735,7 +848,7 @@ It replaces a manual Excel VLOOKUP + eyeball-compare workflow that was too slow 
 
 ## 2. High-Level Architecture
 
-**TL;DR:** Browser → Flask backend (`:5001`) → SQL Server. ACS and Costsheet come from the DB; PPS files are parsed entirely in the browser. Dev-only, no auth.
+**TL;DR:** Browser → Flask backend (`:5001`) → SQL Server. ACS and Costsheet come from the DB; PPS files are parsed entirely in the browser. AD login guards every data endpoint; HTTPS is the piece still missing.
 
 ```
 ┌────────────────────────┐        ┌──────────────────────────────────┐
@@ -757,7 +870,7 @@ It replaces a manual Excel VLOOKUP + eyeball-compare workflow that was too slow 
                                   └──────────────────────────────────┘
 ```
 
-**Deployment model:** dev-only — both processes run on the analyst's laptop. There is no auth layer: Flask has open CORS and SQL Server relies on Windows integrated auth (`Trusted_Connection=yes`). **Add auth before moving this to a shared server.**
+**Deployment model:** both processes run on one Windows host — a laptop for dev, a shared PC for the current internal deployment (§10.2). **Authentication exists** — AD login with app-managed editor/read-only groups, session cookies, and `@login_required` on every data endpoint (see the Authentication section). SQL Server is reached with Windows integrated auth (`Trusted_Connection=yes`), so the DB sees the account running Flask, not the logged-in user. What is still outstanding for a real go-live is **infrastructure, not auth**: HTTPS, a stable FQDN, `LOCAL_AUTH_ENABLED=false`, a real `FLASK_SECRET_KEY`, and a pinned `CORS_ALLOWED_ORIGINS` — see the go-live checklist.
 
 ---
 
@@ -892,7 +1005,7 @@ DashBoard/                       ← Flask backend · dev: python sql_backend.py
 
 - **`.env`** — All configuration and secrets in one gitignored file, loaded once at startup (`load_dotenv()`): AD settings (`AD_ENABLED`, server/domain/base-DN, `AD_START_TLS`, `AD_AUTH_MODE`, `AD_USER_FILTER`, `AD_ALLOWED_GROUPS`), the local dev account, `FLASK_SECRET_KEY` (signs the session cookie — must be a **strong** secret), `INITIAL_ADMINS`, `SESSION_LIFETIME_DAYS`, `COOKIE_SECURE`, and `CORS_ALLOWED_ORIGINS`. **Never commit it.** (The Authentication section's config table lists every key.)
 
-- **`tests/`** — The pytest suite (`python -m pytest tests/ -v`, **37 tests**). `conftest.py` supplies fixtures that point every test at an **isolated temporary database** (via `VALIDATOR_DB_PATH` + monkeypatch, so real data is never touched), plus a Flask **test client** and a `login_as()` helper that injects a session to bypass AD. The four `test_*.py` files cover, respectively: the annotation save + change-diff logic, the groups CRUD + `resolve_perms` rules, the log storage, and the HTTP routes' access guards (401 vs 403 vs 200) end-to-end.
+- **`tests/`** — The pytest suite (`python -m pytest tests/ -v`, **51 tests**). `conftest.py` supplies fixtures that point every test at an **isolated temporary database** (via `VALIDATOR_DB_PATH` + monkeypatch, so real data is never touched), plus a Flask **test client** and a `login_as()` helper that injects a session to bypass AD. The five `test_*.py` files cover the annotation save + change-diff logic, the groups CRUD + `resolve_perms` rules, the log storage, the HTTP routes' access guards (401 vs 403 vs 200) end-to-end, and `ColorwayCode` row expansion.
 
 **How a request flows:** the browser calls `sql_backend.py` → a guard checks the session → the view
 reads/writes either SQL Server (data endpoints) or one of the SQLite tables (annotations / groups /
@@ -1015,46 +1128,14 @@ The user-filled **Error From** / **Done** columns are NOT from any source DB —
 
 No Redux, no React Query, no fetching library. State lives in `App.tsx`'s `useState` calls; the comparison logic is pure and runs synchronously on Validate click.
 
-### 5.2 File infrastructure for Frontend
+### 5.2 Where the frontend files live
 
-```
-DashBoard/frontend/
-├── package.json · vite.config.ts · tsconfig*.json · index.html · .env
-├── README.md              ← frontend-only quick reference
-└── src/
-    ├── main.tsx           ← ReactDOM.createRoot mount
-    ├── App.tsx            ← root component + state ownership
-    ├── vite-env.d.ts      ← ambient env-var types
-    ├── lib/               ← PURE domain logic (no React)
-    │   ├── api.ts             fetchACS, fetchCostsheet, auth + group-admin calls
-    │   ├── constants.ts       KEY_PAIRS, sizes, colors, C_KEY_ALIASES
-    │   ├── normalize.ts       size / join-key / date / header normalisation
-    │   ├── costsheet.ts       buildCostsheetIndex + lookupCostsheet (MAX date)
-    │   ├── comparison.ts      runComparison — the entry point
-    │   ├── csv.ts             exportComparisonCSV (Verdict + Diff_Reason)
-    │   ├── summary.ts         Match / Diff / No Key aggregation for the Summary view
-    │   └── types.ts           shared TypeScript types
-    ├── components/
-    │   ├── Header.tsx
-    │   ├── UploadStrip.tsx        composes 3 file slots
-    │   ├── FileSlotACS.tsx        loads dbo.ACS
-    │   ├── FileSlotPPS.tsx        drag+drop, xlsx parsing, dedupe
-    │   ├── FileSlotCostsheet.tsx  loads Costsheet view
-    │   ├── PreviewTable.tsx       shared mini table
-    │   ├── KeyInfoPanel.tsx       shows keys + FOB logic + Validate button
-    │   ├── ResultsToolbar.tsx     stats + search + filter buttons + export + Save (disabled for read-only)
-    │   ├── ResultsTable.tsx       the big results grid (sticky-right verdict)
-    │   ├── GroupAdmin.tsx         admin screen: create groups, add members, set edit/manage (manager-only)
-    │   ├── LogDashboard.tsx       admin Log page: online-now / logins / change history (manager-only)
-    │   └── SummaryDashboard.tsx   Validation Summary: Match/Diff/No Key by factory & season (all users)
-    ├── hooks/
-    │   ├── useAuth.tsx            auth context (login/logout, /me on load)
-    │   ├── useToast.tsx           toast context + provider
-    │   └── usePresenceHeartbeat.tsx  pings /ping every 30s while logged in (feeds "online now")
-    └── styles/
-        ├── tokens.css             CSS variables (palette, type, spacing)
-        └── global.css             component classes
-```
+> Full per-file inventory is in [§0.3](#03-frontend--domain-logic-frontendsrclib-zero-react),
+> [§0.4](#04-frontend--react-frontendsrc) and [§0.5](#05-frontend--build-config-frontend), with the
+> suggested reading order at the end of §0.4. Not repeated here.
+
+The shape in one line: `lib/` is pure domain logic with **zero React**, `components/` is presentation,
+`hooks/` holds the three contexts (auth, toast, presence heartbeat), and `App.tsx` owns all state.
 
 ### 5.3 State Model
 
@@ -1203,7 +1284,7 @@ Function: `lookupCostsheet(cIdx, bConvertedSize, joinKeyStr, keyNoColor)` in `co
    }, null);
    ```
 
-**Critical nuance:** MAX date is computed **within the size-matched subset**, not across all candidates. So a size-S PPS row returns the newest **S** record even if a newer XL record exists. This is deliberate (see also [§6.6](#66-3-way-verdict-logic) and [§8.5](#85-max-date-is-within-size-matched-subset)).
+**Critical nuance:** MAX date is computed **within the size-matched subset**, not across all candidates. So a size-S PPS row returns the newest **S** record even if a newer XL record exists. This is deliberate (see also [§6.6](#66-3-way-verdict-logic) and [§8.5](#85-max-date-is-within-the-size-matched-subset)).
 
 **Since 2026-07-10** the backend already pre-dedupes to the newest record per `(Season, Style No., Color, Factory, Size)` (see [§3.3](#33-file-c--costsheet-database-dboview_costsheet_wisdom)), so this reduce usually sees one candidate per size and acts as a safety net. Max-over-group-winners equals max-over-all-rows, so results are identical.
 
@@ -1506,7 +1587,7 @@ npm install
 npm run dev
 ```
 
-Opens `http://localhost:5173`. Vite proxies nothing — the frontend calls the backend directly at `VITE_BACKEND_URL` (default `http://localhost:5001`). To point elsewhere, edit `.env`:
+Opens `http://localhost:5173`. Vite proxies nothing — the frontend calls the backend directly. When `VITE_BACKEND_URL` is unset the URL is built at runtime as `http://${window.location.hostname}:5001` (`frontend/src/lib/api.ts`) — i.e. **whatever host served the page, on port 5001**, not a hardcoded `localhost`. That is deliberate: it survives the host PC's IP changing, which is the failure described at the top of this document. Browse via `localhost` and it resolves to `localhost`; browse from a colleague's PC and it follows their URL. Note there is no `frontend/.env` in the repo, so this fallback is what actually runs today. To override it, create one:
 
 ```
 VITE_BACKEND_URL=http://some-other-host:5001
@@ -1688,7 +1769,7 @@ The single biggest thing that makes future migration painless: **ask IT for an i
 - **Windows integrated auth** (`Trusted_Connection=yes`) uses the identity of whoever runs the process. On your PC that's you; as an NSSM service, it's the configured `ObjectName` account.
 - **CORS** currently accepts any origin (`CORS(app)`). Fine for A/B. For C (shared origin), tighten to `CORS(app, origins=['https://validator.example.local'])`.
 - **HTTPS on internal networks** isn't strictly required, but modern browsers block some APIs (clipboard, service workers) on `http://`. If you add those features, upgrade to Option C with a cert.
-- **No auth:** anyone on the LAN who finds the URL can hit the API. If that's a concern, gate it behind IIS Windows Authentication (Option C) or add a shared-token check to Flask.
+- **Auth exists but the transport does not protect it.** AD login guards every endpoint, so the API is not open — but on plain HTTP the password and session cookie cross the LAN in clear text, and `LOCAL_AUTH_ENABLED=true` still bypasses AD entirely. Option C's cert is what closes that; see the go-live checklist.
 - **Version control:** keep `DashBoard/` in git _now_, even as a local repo — migration becomes `git clone` instead of emailing zip files.
 - **`MIGRATION.md`:** as you set up Option A, jot down every command you actually ran into a file inside `DashBoard/`. When migration day comes, you follow your own checklist.
 
@@ -1764,13 +1845,26 @@ TABLE_C  = 'schema.your_costsheet_view'
 
 If column names differ, the aliases in `C_KEY_ALIASES` may already cover them — if not, add them (see [§11.3](#113-add-a-new-costsheet-column-alias)).
 
-### 11.7 Add authentication
+### 11.7 Harden the existing authentication
 
-The Flask backend is currently open. Before deploying anywhere but a laptop, at minimum:
+⚠️ **This section used to say the backend was open. It is not** — AD login, sessions and
+per-group roles were built (2026-07-20 / 2026-07-31) and are documented in full in the
+Authentication section above. `auth_ad.py` does the LDAP bind, and `sql_backend.py` guards every
+data endpoint with `@login_required`.
 
-- Restrict CORS: `CORS(app, origins=['https://yourdomain.example'])`.
-- Add a shared-secret header check, or route it behind an authenticated reverse proxy.
-- If the frontend goes on a shared host, gate it too.
+What is left is hardening, all of it configuration rather than code:
+
+- **`FLASK_SECRET_KEY`** — permissions ride in the session cookie, so the shipped
+  `dev-insecure-change-me` default would let anyone forge an admin session. Set a strong random
+  value, and keep it stable (changing it logs everyone out).
+- **`LOCAL_AUTH_ENABLED=false`** — the local dev account bypasses AD entirely.
+- **`CORS_ALLOWED_ORIGINS`** — empty reflects the caller's origin, which is fine for dev and wrong
+  for a shared host. Pin it to the real FQDN.
+- **`COOKIE_SECURE=true`** — requires serving over HTTPS first.
+- **`AD_ALLOWED_GROUPS`** — empty means *everyone in the directory* can log in.
+
+To add a new guarded endpoint, decorate it with `@login_required`; for one that writes, also check
+the caller's `can_edit`. See the go-live checklist for the full list.
 
 ---
 
@@ -1848,28 +1942,3 @@ Fixed 2026-06-30 — cells use `padding: 7px 12px` and the table has `width: max
 ### Only 1 PPS file loads when I drop 4
 
 The stale-closure bug fixed 2026-06-30 (see [§8.2](#82-parallel-drop-stale-closure-fixed-2026-06-30)). If it regresses, verify `FileSlotPPS.tsx` still uses `setFiles((prev) => …)` rather than `setFiles([…files, next])`.
-
----
-
-## Appendix A — File-level Comment Map
-
-Every `.ts` / `.tsx` file in `frontend/src/` has a top-of-file JSDoc block describing its role, plus inline comments on non-obvious logic. Read in this order for a full picture:
-
-1. `lib/types.ts` — data shapes
-2. `lib/constants.ts` — configuration
-3. `lib/normalize.ts` — atomic helpers
-4. `lib/costsheet.ts` — Costsheet index + lookup
-5. `lib/comparison.ts` — main `runComparison`
-6. `lib/csv.ts` — export format
-7. `lib/api.ts` — backend client
-8. `App.tsx` — state + wiring
-9. Components (`Header` → `UploadStrip` → `FileSlot*` → `KeyInfoPanel` → `ResultsToolbar` → `ResultsTable`)
-10. `hooks/useToast.tsx`
-
----
-
-## Appendix B — Legacy `index.html`
-
-`DashBoard/index.html` is the original single-file HTML version this project was built from. It had feature parity with the React app as of 2026-06-30 and is kept as a fallback and for reference — if you break the React app during a refactor, the HTML version should still work.
-
-**The React app is the going-forward implementation; new features should go there.**
