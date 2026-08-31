@@ -2,7 +2,7 @@
 
 **Catches FOB price mismatches across three systems before they turn into a wrong purchase order.**
 
-A web dashboard that takes a batch of PPS quote files and checks every row's price against two
+A web dashboard that pulls a factory's PPS quotes and checks every row's price against two
 authoritative databases at once — flagging the disagreements, explaining *which* source disagrees,
 and letting the team annotate and export the result.
 
@@ -34,8 +34,9 @@ This tool replaces that workflow.
 
 ## What it does
 
-- **Drag and drop up to 4 PPS files** — parsed entirely in the browser, nothing uploaded to a server.
-- **Pulls ACS and Costsheet automatically** from SQL Server, so there is nothing to export by hand.
+- **Pick the factories you want** — PPS rows load straight from the database by factory code, up to
+  four factories at a time.
+- **All three sources come from SQL Server** — nothing to export, upload or keep in sync by hand.
 - **Matches rows the way a human would** — normalising sizes, falling back through five levels of
   size specificity, expanding multi-colourway rows, and picking the newest costsheet entry.
 - **Gives every row a verdict** — Match, Diff (with a chip naming *which* source disagrees), or
@@ -51,7 +52,7 @@ This tool replaces that workflow.
 
 ```mermaid
 flowchart LR
-    PPS["PPS quote files<br/>(.xlsx, drag & drop)"] -->|parsed in browser| CMP
+    PPS[("PPS<br/>quotes, by factory")] --> API
     ACS[("ACS<br/>master price DB")] --> API
     CS[("WISDOM<br/>costsheet view")] --> API
     API["Flask backend<br/>normalise · expand colourways · derive size"] --> CMP
@@ -91,9 +92,8 @@ caused — is in the [handover documentation](docs/HANDOVER.md#core-logic).
 | Layer | Choice | Why |
 | --- | --- | --- |
 | **Backend** | Python · Flask, served by waitress | Small surface: fetch, normalise, serve |
-| **Database** | SQL Server via ODBC, Windows integrated auth | Read-only access to the systems of record |
+| **Database** | SQL Server via ODBC, Windows integrated auth | Read-only access to all three systems of record |
 | **Frontend** | Vite · React 18 · TypeScript (strict) | Fast builds, typed domain logic |
-| **Parsing** | SheetJS (`xlsx`) | PPS files never leave the browser |
 | **Annotations** | SQLite | The one thing the app writes |
 | **Styling** | Plain CSS with design tokens | No framework; light/dark from one token file |
 

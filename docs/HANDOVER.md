@@ -158,7 +158,8 @@ backend, no rebuild step. §9.3 covers it.
 2. Sign in with the `LOCAL_AUTH_USER` / `LOCAL_AUTH_PASSWORD` from step 1.
 3. Click **Load ACS from DB**. Rows appearing is the real proof: it means the browser reached Flask
    _and_ Flask reached SQL Server _and_ your session cookie was accepted.
-4. Drag a PPS `.xlsx` onto the upload strip. Verdicts appear once both sides are present.
+4. In the **PPS DB** slot, tick one or more factories and click **Load**. Verdicts appear once
+   both sides are present.
 
 If step 3 shows `Error: HTTP 0`, the frontend cannot reach the backend at all — check terminal 1 is
 still running on 5001. A red toast with a SQL message means the opposite: Flask is fine, the
@@ -759,7 +760,7 @@ Run: `python -m pytest tests/ -v`
 | `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
 | `components/UploadStrip.tsx`       | Composes the three file slots below.                                                                                                     |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
-| `components/FileSlotPPS.tsx`       | Drag-and-drop PPS files, xlsx parsing, column strip-down, size normalisation.                                                            |
+| `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
 | `components/PreviewTable.tsx`      | Shared mini preview table used by all three slots.                                                                                       |
 | `components/KeyInfoPanel.tsx`      | Shows the join keys + FOB rules, holds the **Validate** button.                                                                          |
@@ -829,7 +830,7 @@ Run: `python -m pytest tests/ -v`
 
 ## 1. Purpose & Business Context
 
-**TL;DR:** For every uploaded PPS row, confirm its FOB price (`LOCAL_QUOTE_AMOUNT`) matches **both** the ACS FOB **and** the Costsheet/WISDOM Final FOB. Mismatches get flagged. This replaces a manual Excel VLOOKUP workflow.
+**TL;DR:** For every PPS row, confirm its FOB price (`LOCAL_QUOTE_AMOUNT`) matches **both** the ACS FOB **and** the Costsheet/WISDOM Final FOB. Mismatches get flagged. This replaces a manual Excel VLOOKUP workflow.
 
 The dashboard validates **`LOCAL_QUOTE_AMOUNT`** (the FOB price on a PPS quote) against two authoritative sources:
 
@@ -850,26 +851,29 @@ It replaces a manual Excel VLOOKUP + eyeball-compare workflow that was too slow 
 
 ## 2. High-Level Architecture
 
-**TL;DR:** Browser → Flask backend (`:5001`) → SQL Server. ACS and Costsheet come from the DB; PPS files are parsed entirely in the browser. AD login guards every data endpoint; HTTPS is the piece still missing.
+**TL;DR:** Browser → Flask backend (`:5001`) → SQL Server. All three sources — ACS, PPS and Costsheet — come from the DB; the comparison itself runs in the browser. AD login guards every data endpoint; HTTPS is the piece still missing.
 
 ```
-┌────────────────────────┐        ┌──────────────────────────────────┐
-│  User's browser         │───────▶│  Flask backend (sql_backend.py) │
-│  (Vite dev :5173 or     │  HTTP  │  Port 5001, CORS *              │
-│   static build)         │◀───────│                                  │
-└────────────────────────┘        │  Endpoints:                      │
-        │                          │   /get_file_a_data (ACS)         │
-        │  User drops              │   /get_costsheet_data            │
-        │  PPS .xlsx files         └────────┬─────────────────────────┘
-        ▼                                   │  ODBC (Trusted_Connection)
-┌────────────────────────┐                  ▼
-│  Browser XLSX parser    │        ┌──────────────────────────────────┐
-│  (SheetJS / xlsx)       │        │  SQL Server                      │
-└────────────────────────┘        │  <SQL_HOST>\<SQL_HOST>          │
-                                  │  Database: <DATABASE>            │
-                                  │   • dbo.ACS                       │
-                                  │   • dbo.VIEW_COSTSHEET_WISDOM     │
-                                  └──────────────────────────────────┘
+┌──────────────────────────┐        ┌───────────────────────────────────┐
+│ User's browser           │───────▶│ Flask backend                     │
+│ (Vite dev :5173 or       │  HTTP  │ sql_backend.py · :5001            │
+│  static build)           │◀───────│                                   │
+│                          │        │ Data endpoints:                   │
+│ Comparison runs HERE     │        │  /get_file_a_data      (ACS)      │
+│ (pure TS, src/lib/)      │        │  /get_pps_factories    (FTYCODE)  │
+└──────────────────────────┘        │  /get_pps_data?ftycode=…          │
+                                    │  /get_costsheet_data              │
+                                    └────────┬──────────────────────────┘
+                                             │  ODBC (Trusted_Connection)
+                                             ▼
+                                    ┌───────────────────────────────────┐
+                                    │ SQL Server                        │
+                                    │ <SQL_HOST>\<SQL_HOST>             │
+                                    │ Database: <DATABASE>              │
+                                    │  • dbo.ACS                        │
+                                    │  • dbo.PPS                        │
+                                    │  • dbo.VIEW_COSTSHEET_WISDOM      │
+                                    └───────────────────────────────────┘
 ```
 
 **Deployment model:** both processes run on one Windows host — a laptop for dev, a shared PC for the current internal deployment (§10.2). **Authentication exists** — AD login with app-managed editor/read-only groups, session cookies, and `@login_required` on every data endpoint (see the Authentication section). SQL Server is reached with Windows integrated auth (`Trusted_Connection=yes`), so the DB sees the account running Flask, not the logged-in user. What is still outstanding for a real go-live is **infrastructure, not auth**: HTTPS, a stable FQDN, `LOCAL_AUTH_ENABLED=false`, a real `FLASK_SECRET_KEY`, and a pinned `CORS_ALLOWED_ORIGINS` — see the go-live checklist.
@@ -878,7 +882,7 @@ It replaces a manual Excel VLOOKUP + eyeball-compare workflow that was too slow 
 
 ## 3. Data Sources
 
-**TL;DR:** Three inputs — **A** = ACS (DB), **B** = PPS files (browser upload, up to 4), **C** = Costsheet (DB, optional; upgrades 2-way → 3-way). A and C are fetched from SQL Server and get backend-side colorway row expansion plus a derived `EXTRACTED_SIZE`.
+**TL;DR:** Three inputs, **all from SQL Server** — **A** = ACS, **B** = PPS (picked by factory, up to 4 factories), **C** = Costsheet (optional; upgrades 2-way → 3-way). A and C get backend-side colorway row expansion plus a derived `EXTRACTED_SIZE`; **B comes back raw** — no expansion, no dedupe — and the frontend projects it down to the columns it compares.
 
 ### 3.1 File A — ACS Database (`dbo.ACS`)
 
@@ -901,9 +905,16 @@ Key columns used by the frontend:
 | `FinalFOB`       | FOB to use when PPS size == ACS CBDID size |
 | `ExtSzFOB`       | FOB to use when PPS size != ACS CBDID size |
 
-### 3.2 File B — PPS Files (uploaded via drag/drop)
+### 3.2 File B — PPS Database (`dbo.PPS`, one factory at a time)
 
-`.xlsx` / `.xls` / `.csv` files uploaded by the user, up to 4 at once. Matching is by **exact, case-sensitive** header text, and only these columns are kept — everything else is dropped at ingest:
+> **Changed 2026-08-31.** PPS used to be `.xlsx` files dragged onto the page and parsed with SheetJS.
+> It now comes from the database like the other two sources; the old drop zone is gone.
+
+`/get_pps_factories` fills the picker with the distinct `FTYCODE` list, then
+`/get_pps_data?ftycode=…` returns every row for a ticked factory. Up to `MAX_B_FILES` (4) factories
+can be loaded at once, and each becomes one `PPSFile` entry with its own badge colour. The backend
+sends rows **raw** — the frontend keeps only these columns, matched by **exact, case-sensitive**
+header text, and everything else is dropped at ingest:
 
 | Column                  | Purpose                                                                                                    |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -919,7 +930,7 @@ Key columns used by the frontend:
 | `INSERT_DATE`           | Newest-wins tie-break inside `dedupePPSRows`. Hidden from the PPS preview                                  |
 | `ORIG_SIZE_DATA`        | (Added) preserves the raw `SIZE_DATA` for display                                                          |
 
-The kept-column list is `STRICT_B_COLS` in `src/lib/constants.ts`. `MSC_CODE` / `RESPONSIBLE_DEVELOPER` come straight from the PPS file (they are not part of ACS/Costsheet). Rows where every one of these columns is empty are filtered out.
+The kept-column list is `STRICT_B_COLS` in `src/lib/constants.ts`. `MSC_CODE` / `RESPONSIBLE_DEVELOPER` come straight from `dbo.PPS` (they are not part of ACS/Costsheet). Rows where every one of these columns is empty are filtered out.
 
 ### 3.3 File C — Costsheet Database (`dbo.VIEW_COSTSHEET_WISDOM`)
 
@@ -1125,7 +1136,8 @@ The user-filled **Error From** / **Done** columns are NOT from any source DB —
 - **Vite 5** — dev server + bundler
 - **React 18** — UI
 - **TypeScript 5** — strict mode
-- **xlsx (SheetJS) 0.18** — PPS file parsing in the browser
+- **xlsx (SheetJS) 0.18** — ⚠️ **no longer used.** Still listed in `package.json`, but nothing in
+  `src/` has imported it since PPS moved from file upload to `dbo.PPS`. Safe to remove.
 - **No CSS framework** — plain CSS with variables in `src/styles/tokens.css`
 
 No Redux, no React Query, no fetching library. State lives in `App.tsx`'s `useState` calls; the comparison logic is pure and runs synchronously on Validate click.
@@ -1258,7 +1270,7 @@ const srcIdx = isExt ? extFobIdx : fobIdx; // Extended Size FOB vs Final FOB
   **both** lists, so they price from `Extended Size FOB` even though the shared resolver
   calls them regular. Everything else resolves identically in both.
 - **It decides the FOB column ONLY — never the matching key.** `szNorm` still comes from
-  the shared `normalizeSizeToken`, because `FileSlotPPS.tsx` normalises every uploaded PPS
+  the shared `normalizeSizeToken`, because `FileSlotPPS.tsx` normalises every incoming PPS
   row's `SIZE_DATA` with that same function. If the two ever disagree, a PPS `4X` row stops
   matching the Costsheet `4X` row and silently takes another size's price. This was a real
   bug caught in review — keep the two concerns separate.
@@ -1370,14 +1382,14 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 ## 7. UI Behaviour
 
-**TL;DR:** Three upload slots (ACS · Costsheet · PPS) → a Key Info panel with the Validate button → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
+**TL;DR:** Three source slots (ACS · Costsheet · PPS) → a Key Info panel with the Validate button → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
 
 ### 7.1 Upload Strip
 
 Three slots left-to-right: **ACS · Costsheet · PPS**.
 
 - **ACS & Costsheet** — single button → backend fetch → preview.
-- **PPS** — drop zone (click to browse or drag). Accepts up to `MAX_B_FILES` (4) files. Duplicate filenames are rejected with a toast. Each loaded file gets a distinct badge colour from `FILE_COLORS`.
+- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. _(It still reuses the `.dropzone` CSS class for styling — there are no drag handlers on it.)_
 
 ### 7.2 Key Info Panel
 
