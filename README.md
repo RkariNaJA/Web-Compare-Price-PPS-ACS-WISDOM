@@ -103,15 +103,24 @@ unit-testable — and it is the part that matters most.
 
 ## Screenshots
 
-<!-- Drop images into docs/images/ and uncomment:
+**Compare** — all three sources loaded, the matching rules stated up front, and a verdict on every
+row. Diff rows name the source that disagrees and by how much.
 
-| Compare view | Summary view |
+![The compare view: ACS, Costsheet and PPS preview panels above the validation rules, and a results
+table with a verdict on each row](docs/images/compare.jpg)
+
+**Summary** — the same validation as a quality picture: one donut per factory, never lumped
+together, plus a factory × season breakdown.
+
+![The summary view: a Match/Diff/No Key donut for each of four factories, above a factory by season
+breakdown table](docs/images/summary.jpg)
+
+| Sign-in | Home |
 | --- | --- |
-| ![Comparison table](docs/images/compare.png) | ![Summary dashboard](docs/images/summary.png) |
+| ![The login page](docs/images/login.jpg) | ![The view picker after signing in](docs/images/home.jpg) |
 
--->
-
-*Screenshots coming — add PNGs to `docs/images/` and uncomment the block above.*
+<sub>Business identifiers — developer names, style numbers, cost sheet numbers, MSC and colourway codes,
+factory codes and seasons — are redacted in these screenshots.</sub>
 
 ## Getting started
 
