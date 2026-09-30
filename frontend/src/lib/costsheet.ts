@@ -24,6 +24,8 @@ export interface CostsheetEntry {
   isExt: boolean;   // true = extended size, so fobVal came from `Extended Size FOB`
   dateVal: Date | null;  // First Input Date parsed; null if missing/unparseable
   fobVal: string;   // winning FOB as a trimmed string — source depends on isExt
+  finalFobVal: string;  // raw `Final FOB` cell (display-only; shown in its own column)
+  extFobVal: string;    // raw `Extended Size FOB` cell (display-only; shown in its own column)
   versionVal: string;      // CBD Version as a trimmed string
   costSheetNoVal: string;  // Cost Sheet No. as a trimmed string
 }
@@ -40,7 +42,9 @@ export interface CostsheetIndex {
 
 // Return shape from lookupCostsheet — what runComparison stitches onto each CompRow.
 export interface CostsheetMatch {
-  fobVal: string;
+  fobVal: string;      // size-picked FOB (Final or Extended) — the value the verdict uses
+  finalFobVal: string; // the winning row's `Final FOB`, whatever its size
+  extFobVal: string;   // the winning row's `Extended Size FOB`, whatever its size
   dateStr: string;    // YYYY-MM-DD in LOCAL time (not UTC — see date formatting note below)
   sizeRaw: string;
   sizeNorm: string;
@@ -101,10 +105,12 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
     const isExt = normalizeCostsheetSizeToken(szRaw) === 'ALL_EXTEND_SIZE_RB';
     const srcIdx = isExt ? extFobIdx : fobIdx;
     const fobVal = srcIdx !== -1 ? String(row[srcIdx] ?? '').trim() : '';
+    const finalFobVal = fobIdx !== -1 ? String(row[fobIdx] ?? '').trim() : '';
+    const extFobVal = extFobIdx !== -1 ? String(row[extFobIdx] ?? '').trim() : '';
     const versionVal = versionIdx !== -1 ? String(row[versionIdx] ?? '').trim() : '';
     const costSheetNoVal = costSheetNoIdx !== -1 ? String(row[costSheetNoIdx] ?? '').trim() : '';
 
-    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, versionVal, costSheetNoVal };
+    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, finalFobVal, extFobVal, versionVal, costSheetNoVal };
 
     // Full 4-part key (color included)
     const key = [
@@ -152,6 +158,8 @@ export function lookupCostsheet(
 
   const empty: CostsheetMatch = {
     fobVal: '',
+    finalFobVal: '',
+    extFobVal: '',
     dateStr: '',
     sizeRaw: '',
     sizeNorm: '',
@@ -199,6 +207,8 @@ export function lookupCostsheet(
 
   return {
     fobVal: best.fobVal,
+    finalFobVal: best.finalFobVal,
+    extFobVal: best.extFobVal,
     dateStr,
     sizeRaw: best.szRaw || '',
     sizeNorm: best.szNorm || '',

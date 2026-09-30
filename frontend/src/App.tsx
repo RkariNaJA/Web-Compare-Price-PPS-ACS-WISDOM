@@ -222,7 +222,8 @@ function AppInner() {
           r.mscCode.toLowerCase().includes(q) ||
           r.responsibleDeveloper.toLowerCase().includes(q) ||
           r.srcFile.toLowerCase().includes(q) ||
-          (r.cFobValue || '').toLowerCase().includes(q),
+          (r.cFinalFobValue || '').toLowerCase().includes(q) ||
+          (r.cExtFobValue || '').toLowerCase().includes(q),
       );
     }
     return rows;

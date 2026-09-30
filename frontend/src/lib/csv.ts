@@ -59,7 +59,7 @@ export function exportComparisonCSV(
     'ACS_FOB_Value',
     'LOCAL_QUOTE_AMOUNT',
     'LOCAL_CURRENCY',
-    ...(hasC ? ['Costsheet_Final_FOB', 'Costsheet_Max_Input_Date'] : []),
+    ...(hasC ? ['Costsheet_Final_FOB', 'Costsheet_Ext_Size_FOB', 'Costsheet_Max_Input_Date'] : []),
     // User-filled columns (not DB-sourced) — mirror the on-screen table order,
     // sitting just before the Verdict.
     'Error_From',
@@ -83,7 +83,7 @@ export function exportComparisonCSV(
         r.dbFobValue,
         r.localQuoteVal,
         r.currency,
-        ...(hasC ? [r.cFobValue || '', r.cDateStr || ''] : []),
+        ...(hasC ? [r.cFinalFobValue || '', r.cExtFobValue || '', r.cDateStr || ''] : []),
         ann?.errorFrom || '',
         ann?.done ? 'Yes' : '',
         ann?.savedBy || '',

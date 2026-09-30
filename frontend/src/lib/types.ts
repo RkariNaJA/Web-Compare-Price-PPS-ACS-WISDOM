@@ -65,11 +65,13 @@ export interface CompRow {
   joinKeyStr: string;          // debug string of the composite key
 
   /* Costsheet (WISDOM) fields — populated when File C is loaded */
-  cFobValue: string;           // Costsheet Final FOB
+  cFobValue: string;           // size-picked Costsheet FOB (Final or Extended) — what cMatch/verdict use
+  cFinalFobValue: string;      // Costsheet `Final FOB` of the winning row (display column)
+  cExtFobValue: string;        // Costsheet `Extended Size FOB` of the winning row (display column)
   cVersionVal: string;         // Costsheet "CBD Version" (shown as "Version")
   cCostSheetNo: string;        // Costsheet "Cost Sheet No."
   cDateStr: string;            // "First Input Date" of the winning Costsheet row (YYYY-MM-DD, local)
-  cMatch: boolean | null;      // did LOCAL_QUOTE_AMOUNT equal Costsheet Final FOB?
+  cMatch: boolean | null;      // did LOCAL_QUOTE_AMOUNT equal the size-picked Costsheet FOB?
   cMatched: boolean;           // did we even find a Costsheet row for this key/size?
   cSizeVal: string;            // raw size string from the Costsheet row
   cSizeNorm: string;           // normalized size (for matching against PPS)

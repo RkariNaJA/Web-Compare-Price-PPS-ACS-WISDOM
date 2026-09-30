@@ -6,7 +6,7 @@
  *
  * Layout — two header rows describe grouped columns; the second row has the
  * sub-labels. When Costsheet is loaded (hasC=true), the WISDOM SIZE / WISDOM
- * FINAL FOB / Max Input Date columns appear. The rightmost "ACS Match?" column
+ * FINAL FOB / WISDOM EXT SIZE FOB / Max Input Date columns appear. The rightmost "ACS Match?" column
  * is position:sticky right so the verdict stays visible while the table scrolls.
  *
  * All colour classes (cell-match / cell-miss / cell-empty / cell-c / etc.) come
@@ -44,6 +44,15 @@ const MIN_COL_W = 40;
 // screen right after Validate. Users can still drag any column wider than this.
 const MAX_COL_W = 150;
 
+// Same FOB equality the comparison uses: numeric with a tiny epsilon, else
+// case-insensitive string equality when either side isn't a number.
+function fobEq(a: string, b: string): boolean {
+  const x = parseFloat(a);
+  const y = parseFloat(b);
+  if (!isNaN(x) && !isNaN(y)) return Math.abs(x - y) < 0.0001;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 export default function ResultsTable({
   rows,
   hasC,
@@ -63,7 +72,7 @@ export default function ResultsTable({
   // fixed), and let the user drag the right edge of any header cell.
   // +4 leaf columns before the sticky "ACS Match?" verdict: the user-filled
   // "Error From" / "Done" pair, plus "Changed By" / "Changed On" attribution.
-  const colCount = hasC ? 23 : 18; // leaf columns, must match the header rows below
+  const colCount = hasC ? 24 : 18; // leaf columns, must match the header rows below
   const tableRef = useRef<HTMLTableElement>(null);
   const [colWidths, setColWidths] = useState<number[] | null>(null);
   const dragRef = useRef<{ idx: number; startX: number; startW: number; lastW: number } | null>(
@@ -79,6 +88,14 @@ export default function ResultsTable({
     if (!firstRow || firstRow.cells.length !== colCount) return;
     setColWidths(Array.from(firstRow.cells).map((c) => Math.min(c.offsetWidth, MAX_COL_W)));
   }, [colWidths, colCount, shown.length]);
+
+  // Header cells are sticky individually, so row 2 must stick just below row 1.
+  // Row 1 never wraps (nowrap), so measuring once per layout change is enough.
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const row1 = table?.tHead?.rows[0];
+    if (table && row1) table.style.setProperty('--hdr-row1-h', `${row1.getBoundingClientRect().height}px`);
+  }, [hasC, colWidths]);
 
   // Drag handle rendered inside a header cell; `col` is the colgroup index
   // whose right edge this handle moves. Pointer capture keeps the drag alive
@@ -190,8 +207,9 @@ export default function ResultsTable({
             {hasC && (
               <>
                 <th className="hc grp">WISDOM FINAL FOB</th>
-                <th className="hc" rowSpan={2}>Version{resizer(15)}</th>
-                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(16)}</th>
+                <th className="hc grp">WISDOM EXT SIZE FOB</th>
+                <th className="hc" rowSpan={2}>Version{resizer(16)}</th>
+                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(17)}</th>
                 <th className="hc">Max Input Date</th>
               </>
             )}
@@ -220,7 +238,8 @@ export default function ResultsTable({
             {hasC && (
               <>
                 <th className="hc grp">Value{resizer(14)}</th>
-                <th className="hc">Max Date{resizer(17)}</th>
+                <th className="hc grp">Value{resizer(15)}</th>
+                <th className="hc">Max Date{resizer(18)}</th>
               </>
             )}
           </tr>
@@ -255,6 +274,15 @@ export default function ResultsTable({
             // problem".)
             const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : isNotCompared ? 'cell-notcompared' : 'cell-miss';
             const lqCls = dbCls;
+
+            // WISDOM FINAL FOB / EXT SIZE FOB cells — display-only (the verdict still
+            // uses the size-picked cFobValue). Green only when the value equals BOTH
+            // PPS FOB and ACS FOB; blank or No Key rows have nothing to compare.
+            const wFobCls = (v: string): string => {
+              if (isNotCompared) return 'cell-notcompared';
+              if (!v || isNoKey) return 'cell-empty';
+              return fobEq(v, row.localQuoteVal) && fobEq(v, row.dbFobValue) ? 'cell-match' : 'cell-miss';
+            };
 
             // Small pill in the "FOB Source" column showing which ACS FOB was used.
             const fobTagCls =
@@ -441,22 +469,17 @@ export default function ResultsTable({
                   )}
                 </td>
                 <td className={`grp ${dbCls}`}>{row.dbFobValue || '—'}</td>
-                {/* Costsheet columns: WISDOM Final FOB + Version + Cost Sheet No + Max Input Date.
+                {/* Costsheet columns: WISDOM Final FOB + Ext Size FOB + Version + Cost Sheet No + Max Input Date.
                     Only when File C is loaded. If no CS row matched, show em-dashes. */}
                 {hasC && (
                   <>
                     {row.cMatched ? (
                       <>
-                        <td
-                          className={`grp ${
-                            isNotCompared
-                              ? 'cell-notcompared'
-                              : row.cMatch
-                                ? 'cell-match'
-                                : 'cell-miss'
-                          }`}
-                        >
-                          {row.cFobValue || '—'}
+                        <td className={`grp ${wFobCls(row.cFinalFobValue)}`}>
+                          {row.cFinalFobValue || '—'}
+                        </td>
+                        <td className={`grp ${wFobCls(row.cExtFobValue)}`}>
+                          {row.cExtFobValue || '—'}
                         </td>
                         <td className="cell-c">{row.cVersionVal || '—'}</td>
                         <td className="cell-c">{row.cCostSheetNo || '—'}</td>
@@ -464,6 +487,7 @@ export default function ResultsTable({
                       </>
                     ) : (
                       <>
+                        <td className="grp cell-empty">—</td>
                         <td className="grp cell-empty">—</td>
                         <td className="cell-empty">—</td>
                         <td className="cell-empty">—</td>

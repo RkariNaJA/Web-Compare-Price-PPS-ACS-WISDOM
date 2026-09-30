@@ -434,11 +434,15 @@ export function runComparison(
         // "found but different value" so the UI can render "No CS" separately).
         let cMatch: boolean | null = null;
         let cFobValue = '';
+        let cFinalFobValue = '';
+        let cExtFobValue = '';
         let cVersionVal = '';
         let cCostSheetNo = '';
         let cDateStr = '';
         if (cResult && cResult.matched) {
           cFobValue = cResult.fobVal;
+          cFinalFobValue = cResult.finalFobVal;
+          cExtFobValue = cResult.extFobVal;
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
@@ -478,6 +482,8 @@ export function runComparison(
           status: 'matched',
           joinKeyStr,
           cFobValue,
+          cFinalFobValue,
+          cExtFobValue,
           cVersionVal,
           cCostSheetNo,
           cDateStr,
@@ -515,11 +521,15 @@ export function runComparison(
 
         let cMatch: boolean | null = null;
         let cFobValue = '';
+        let cFinalFobValue = '';
+        let cExtFobValue = '';
         let cVersionVal = '';
         let cCostSheetNo = '';
         let cDateStr = '';
         if (cResult && cResult.matched) {
           cFobValue = cResult.fobVal;
+          cFinalFobValue = cResult.finalFobVal;
+          cExtFobValue = cResult.extFobVal;
           cVersionVal = cResult.versionVal;
           cCostSheetNo = cResult.costSheetNoVal;
           cDateStr = cResult.dateStr;
@@ -556,6 +566,8 @@ export function runComparison(
           dbHasKey: indexA.has(joinKeyStr),
           dbColorsForKey,
           cFobValue,
+          cFinalFobValue,
+          cExtFobValue,
           cVersionVal,
           cCostSheetNo,
           cDateStr,

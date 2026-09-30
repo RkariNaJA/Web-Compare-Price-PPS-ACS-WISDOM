@@ -147,7 +147,9 @@
 /* ── Upload strip (3 file slots) ────────────────────────────────────────── */
 .upload-strip {
   display: grid;
-  grid-template-columns: 1fr 36px 1fr 36px 1fr;
+  /* minmax(0,1fr): let columns shrink below content width so wide previews
+     don't push the right slot (and its remove buttons) off-screen */
+  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr);
   gap: 0;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -169,6 +171,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 .file-slot.left {
   padding-right: 12px;
@@ -245,6 +248,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   background: var(--surface-2);
   border-radius: var(--r-md);
   padding: 8px 12px;
@@ -256,6 +260,7 @@
 }
 .file-pill .pill-name {
   flex: 1;
+  min-width: 0;
   font-size: 0.78rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -459,6 +464,13 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* .app only has min-height, so without a fixed height the panel grows with
+     the table and the page scrolls instead of .table-wrap — which lets the
+     sticky headers scroll away. Capping it to one screen makes .table-wrap the
+     scroller, keeping the column headers (and toolbar) pinned. max-height is
+     what actually caps it — flex: 1 makes the browser ignore plain height. */
+  height: 100vh;
+  max-height: 100vh;
 }
 .results-toolbar {
   display: flex;
@@ -556,10 +568,16 @@ table.result {
   width: max-content;
   min-width: 100%;
 }
-table.result thead {
+/* Sticky header: pinned per <th>, not on <thead> — a sticky thead with
+   border-collapse lets scrolled body text bleed through in Chrome. Row 2 sits
+   below row 1; ResultsTable measures row 1 into --hdr-row1-h. */
+table.result thead th {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+table.result thead tr:nth-child(2) th {
+  top: var(--hdr-row1-h, 24px);
 }
 table.result thead tr:first-child th {
   background: var(--bg);
@@ -624,7 +642,7 @@ table.result.resizable tbody td {
   text-overflow: ellipsis;
 }
 table.result thead th {
-  position: relative;
+  /* (position: sticky, set above, also anchors the absolute .col-resizer) */
   /* Vertical divider on each header column's right edge — marks the boundary
      the user drags to resize. border-collapse merges this with the thicker
      .grp group borders (2px wins), so group edges still stand out. */

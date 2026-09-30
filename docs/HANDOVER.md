@@ -1282,6 +1282,14 @@ it surfaces the data gap instead of hiding it. Regular rows with a blank `Final 
 **unchanged** (still `matched: true` with a blank value, reading as a Diff); the asymmetry
 is intentional so nothing that worked before could change verdict.
 
+**Display vs verdict (since 2026-09-25).** The results table no longer shows the size-picked
+value. It shows **both** raw cells of the winning Costsheet row side by side: **WISDOM FINAL
+FOB** (`Final FOB`) and **WISDOM EXT SIZE FOB** (`Extended Size FOB`). The size-picked value
+above still lives on as `fobVal` → `CompRow.cFobValue`, and it is **still the only value the
+verdict (`cMatch`) and the `PPS!=WISDOM` reason use**. The two display values are carried as
+`finalFobVal` / `extFobVal` → `cFinalFobValue` / `cExtFobValue` and never feed a verdict. So
+adding the second column changed no Match/Diff result. Colouring of those two cells is in §7.3.
+
 ---
 
 Function: `lookupCostsheet(cIdx, bConvertedSize, joinKeyStr, keyNoColor)` in `costsheet.ts`. For each PPS row:
@@ -1342,7 +1350,7 @@ const acsMatch = hasCData
 ```
 
 - `lqVsAcs` = `parseFloat(LOCAL_QUOTE_AMOUNT) ≈ parseFloat(ACS FOB)` with epsilon `0.0001` (falls back to case-insensitive string equality if either side isn't numeric).
-- `cMatch` = the same comparison against the Costsheet FOB — `Final FOB` for a regular-size Costsheet row, `Extended Size FOB` for an extended-size one (see [§6.5](#65-costsheet-matching-max-first-input-date)); stays `null` if no Costsheet row matched.
+- `cMatch` = the same comparison against the Costsheet FOB — `Final FOB` for a regular-size Costsheet row, `Extended Size FOB` for an extended-size one (see [§6.5](#65-costsheet-matching-max-first-input-date)); stays `null` if no Costsheet row matched. This is the size-picked `cFobValue`, **not** either of the two WISDOM display columns.
 
 **By design:** when Costsheet is loaded but a row has _no_ Costsheet match (`cMatched = false`, `cMatch = null`), the verdict is **Diff** with reason `No WISDOM` — a 3-way check can't be _confirmed_ if a source is missing data.
 
@@ -1359,7 +1367,8 @@ const acsMatch = hasCData
 Function: `exportComparisonCSV(rows, hasC, annotations)` in `csv.ts`.
 
 - Exports **all** `compRows` — the on-screen filter does **not** affect the CSV.
-- Columns: `Row, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, LOCAL_QUOTE_AMOUNT, [Costsheet_Final_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Saved_By, Verdict, Diff_Reason`.
+- Columns: `Row, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, LOCAL_QUOTE_AMOUNT, [Costsheet_Final_FOB, Costsheet_Ext_Size_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Saved_By, Verdict, Diff_Reason`.
+- `Costsheet_Final_FOB` / `Costsheet_Ext_Size_FOB` are the two raw cells, matching the on-screen columns. (Before 2026-09-25 `Costsheet_Final_FOB` held the size-picked value, which for extended sizes was really `Extended Size FOB`.)
 - `Verdict` is `MATCH` / `DIFF` / `NO_KEY_MATCH` — matches the on-screen badge exactly.
 - `Diff_Reason` is populated only for `DIFF` rows, pipe-delimited (e.g. `PPS!=ACS|No_WISDOM`).
 - Cells containing `"`, `,`, or newline are RFC 4180 quoted.
@@ -1402,13 +1411,27 @@ Column layout when Costsheet is loaded (`hasC = true`):
 ```
 # | MSC_CODE | RESPONSIBLE_DEVELOPER | Key Columns (Season/Size/Style/Color/Factory) |
 Size Comparison (PPS SIZE / ACS CBDID SIZE / WISDOM SIZE) |
-FOB Source | ACS FOB | PPS FOB | WISDOM FINAL FOB | Max Input Date |
-ACS Match? (sticky right)
+FOB Source | PPS FOB | ACS FOB | WISDOM FINAL FOB | WISDOM EXT SIZE FOB |
+Version | Cost Sheet No | Max Input Date |
+Error From | Done | Changed By | Changed On | ACS Match? (sticky right)
 ```
 
-When `hasC = false`, the WISDOM SIZE / WISDOM FINAL FOB / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2.
+When `hasC = false`, the WISDOM SIZE / both WISDOM FOB / Version / Cost Sheet No / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2. Leaf column count: **24** with Costsheet, **18** without (`colCount` in `ResultsTable.tsx`, which must match the header rows, since the resizer indices and the measured `<colgroup>` depend on it).
+
+**WISDOM FOB colours** (`wFobCls` in `ResultsTable.tsx`, applied to both WISDOM FOB cells independently):
+
+| Cell state | Colour |
+| --- | --- |
+| value equals **both** PPS FOB and ACS FOB | green (`cell-match`) |
+| value differs from either one | red (`cell-miss`) |
+| blank value, or a No Key Match row (no ACS FOB to compare) | grey (`cell-empty`) |
+| row not compared (non-preferred currency) | violet (`cell-notcompared`) |
+
+Equality is `fobEq`, the same epsilon-`0.0001` numeric check (string fallback) the comparison uses. These colours are display-only; see §6.5 for why they can disagree with the verdict (e.g. green `Final FOB` on an extended-size row that is still a Diff).
 
 **Sticky right:** `ACS Match?` is `position: sticky; right: 0` with a soft left shadow, so the verdict stays visible no matter how wide the table gets. Hover state propagates through the sticky cell.
+
+**Sticky header:** both header rows stay pinned while the table scrolls vertically. This depends on `.table-wrap` being the element that scrolls, not the page. See §8.7 before changing the results panel layout.
 
 **Row limit (render cap):** only the first **100** rows are put in the DOM by default, so large validations (3,000+ rows) don't lag the page. A **"Show first N rows"** dropdown raises the limit to 500 / 1,000 / 3,000 / 5,000 — higher values render progressively slower. The cap affects **display only**: filters, toolbar counts, and CSV export always use the full result set. When more rows exist than the limit, a hint row at the bottom says to raise the limit or export CSV. Options live in `ROW_LIMIT_OPTIONS` in `ResultsTable.tsx`.
 
@@ -1421,7 +1444,7 @@ Applied in this order (in `App.tsx`'s `useMemo`):
 3. **Factory dropdown** — exact match.
 4. **MSC Code field** — a native `<datalist>` combo (type to free-filter, or click a suggestion). Case-insensitive **substring** match on PPS `MSC_CODE`; suggestions are the distinct non-empty codes in the current results, sorted.
 5. **Developer field** — same combo behaviour, matching PPS `RESPONSIBLE_DEVELOPER`.
-6. **Search box** — lowercase substring across: all key values, `LOCAL_QUOTE_AMOUNT`, ACS FOB, `MSC_CODE`, `RESPONSIBLE_DEVELOPER`, filename, Costsheet FOB.
+6. **Search box** — lowercase substring across: all key values, `LOCAL_QUOTE_AMOUNT`, ACS FOB, `MSC_CODE`, `RESPONSIBLE_DEVELOPER`, filename, WISDOM Final FOB, WISDOM Ext Size FOB.
 
 The **✕ Clear Filters** button (next to Export CSV) resets everything at once — verdict categories, both dropdowns, both combo fields, and the search box. It's dimmed/disabled when no filter is active. (The "All" filter button only clears the verdict categories.)
 
@@ -1468,7 +1491,7 @@ for light/dark. Lives in `components/SummaryDashboard.tsx` + `lib/summary.ts` (p
 
 ## 8. Known Gotchas & Fixed Bugs
 
-**TL;DR:** Five items — a timezone off-by-one (fixed), a parallel-drop stale closure (fixed), the bare `ALL_*_SIZE` suffix normalisation, tolerant Costsheet header matching, and the intentional "MAX-within-size" rule (not a bug).
+**TL;DR:** Seven items — a timezone off-by-one (fixed), a parallel-drop stale closure (fixed), the bare `ALL_*_SIZE` suffix normalisation, tolerant Costsheet header matching, the intentional "MAX-within-size" rule (not a bug), and two CSS layout traps: PPS remove buttons pushed off-screen, and the results header that wouldn't stick (both fixed).
 
 ### 8.1 Timezone bug on Max Input Date (fixed 2026-06-30)
 
@@ -1529,6 +1552,28 @@ if (szUp === "ALL_EXTEND_SIZE") szRaw = "ALL_EXTEND_SIZE_RB";
 **Not a bug — a design decision worth documenting.** If Costsheet has multiple rows for the same style+factory but different sizes, the MAX First Input Date is picked _within_ the rows matching the PPS row's size. So a fresher XL record does **not** override an older S record when the PPS row is size S.
 
 If someone reports "I expected the newest record but got an older one," they may be seeing this rule in action rather than a bug — confirm by checking sizes.
+
+### 8.6 PPS factory ✕ off-screen on small screens (fixed 2026-09-24)
+
+**Symptom:** on a narrow window the ✕ that removes a loaded PPS factory was cut off, so users couldn't remove a factory.
+
+**Cause:** the upload strip grid used `1fr` columns. `1fr` is `minmax(auto, 1fr)`, so a column can't shrink below its content's width. The wide preview table pushed the columns past the viewport. PPS is the **rightmost** slot, and the ✕ sits at the right end of each pill, so it went first.
+
+**Fix** (`global.css`): `.upload-strip` columns are `minmax(0, 1fr)`, and `.file-slot`, `.file-pill` and `.pill-name` get `min-width: 0` so a long name truncates with "…" instead of pushing the ✕ out. The preview already scrolls inside its own box. The ACS and Costsheet pills share the same CSS.
+
+### 8.7 Results header didn't stick (fixed 2026-09-24)
+
+**Symptom:** scrolling down the results made the column headers disappear, even though the CSS already had `position: sticky` on the header.
+
+**Cause:** sticky only pins inside the nearest box that scrolls. `.app` only has `min-height: 100vh`, so the results panel grew to the full table height and **the page** scrolled, not `.table-wrap`. ⚠️ Setting `height: 100vh` on `.results-panel` was **not enough**: it also has `flex: 1`, and the flex basis wins over `height` in a column container with no fixed height. Measured in a browser, the panel was still ~5,800px tall with `height` alone.
+
+**Fix** (`global.css` + `ResultsTable.tsx`):
+
+- `.results-panel` gets `height: 100vh; max-height: 100vh`. `max-height` is what actually caps it, which makes `.table-wrap` the scroller.
+- Sticky is set on **each `th`**, not on `thead`. With `border-collapse: collapse`, a sticky `thead` let scrolled row text show through the header in Chrome.
+- Header row 2 sticks at `top: var(--hdr-row1-h)`. `ResultsTable` measures row 1's height into that CSS variable in a `useLayoutEffect` (row 1 never wraps, so one measurement per layout change is enough).
+
+Side effect: there are two scrolls. The page scrolls until the results panel fills the screen, then the table scrolls under the pinned toolbar and header.
 
 ---
 
