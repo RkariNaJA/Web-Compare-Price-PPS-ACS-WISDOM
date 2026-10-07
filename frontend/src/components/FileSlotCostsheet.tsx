@@ -35,27 +35,28 @@ export default function FileSlotCostsheet({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    <div className="source-card sc">
-      <div className="source-head">
-        <span className="slot-label lc">Costsheet</span>
-        <span className="source-tag">optional</span>
-        {data && (
-          <button className="source-clear" onClick={onClear} title="Clear Costsheet">
-            ✕
+    // Setup-card row: label · (Load button | "✓ N rows") · ✕
+    <div className="setup-row">
+      <span className="slot-label lc">Costsheet</span>
+      <div className="setup-ctrl">
+        {data ? (
+          <div className="source-status" title={data.name}>
+            <span className="ok">✓</span> <strong>{data.rows.length.toLocaleString()}</strong> rows
+            <span className="source-name">{data.name}</span>
+          </div>
+        ) : (
+          // Green-tinted button (matches --c colour token).
+          <button className="btn btn-primary green" onClick={handleLoad} disabled={loading}>
+            {loading ? 'Loading…' : 'Load Costsheet'}
           </button>
         )}
       </div>
       {data ? (
-        // Loaded state: row count + source name, where the Load button was.
-        <div className="source-status" title={data.name}>
-          <span className="ok">✓</span> <strong>{data.rows.length.toLocaleString()}</strong> rows
-          <span className="source-name">{data.name}</span>
-        </div>
-      ) : (
-        // Green-tinted button (matches --c colour token). Optional source.
-        <button className="btn btn-primary green" onClick={handleLoad} disabled={loading}>
-          {loading ? 'Loading…' : 'Load Costsheet'}
+        <button className="source-clear" onClick={onClear} title="Clear Costsheet">
+          ✕
         </button>
+      ) : (
+        <span />
       )}
     </div>
   );

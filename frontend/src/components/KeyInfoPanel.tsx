@@ -1,6 +1,6 @@
 /**
- * "How matching works" — a collapsed-by-default reference panel between the
- * Load data panel and the results.
+ * "How matching works" — a collapsed-by-default reference at the bottom of the
+ * "Set up a validation" card.
  *
  * Shows the 5 join-key pairs as chips and a step-by-step explanation of the FOB
  * selection logic (both ACS and Costsheet). Static: nothing here changes what
@@ -8,12 +8,7 @@
  */
 import { KEY_PAIRS } from '../lib/constants';
 
-interface Props {
-  visible: boolean;         // whether ACS + at least one PPS are loaded
-}
-
-export default function KeyInfoPanel({ visible }: Props) {
-  if (!visible) return null;
+export default function KeyInfoPanel() {
   return (
     // Native <details>: collapsed by default, opens with one click, no state needed.
     <details className="key-panel">

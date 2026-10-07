@@ -144,69 +144,60 @@
   cursor: default;
 }
 
-/* ── Load data bar: ACS · Costsheet · PPS cards + Validate, one row ───── */
-.load-panel {
-  display: grid;
-  /* minmax(0,…): cards may shrink below their content so long names truncate
-     instead of pushing Validate off-screen */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2.2fr) auto;
-  gap: 10px;
-  align-items: stretch;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
+/* ── Setup card ("Set up a validation") — before Validate / on Change data ── */
+.setup-wrap {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 24px;
+  overflow: auto;
 }
-.source-card {
+.setup-card {
+  width: 100%;
+  max-width: 760px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 22px 26px 16px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;  /* status sits right under the title, even when a card is stretched */
-  gap: 8px;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-left-width: 3px;  /* source colour stripe */
-  border-radius: var(--r-md);
-  background: var(--surface-2);
+  gap: 16px;
 }
-.source-card.sa {
-  border-left-color: var(--a);
+.setup-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
 }
-.source-card.sb {
-  border-left-color: var(--b);
-  /* PPS: title on its own line, then checkboxes · Load · factory pills flow
-     on one line and wrap only when they run out of room */
-  flex-direction: row;
-  flex-wrap: wrap;
+.setup-rows {
+  display: flex;
+  flex-direction: column;
+}
+.setup-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 28px;  /* label · control · ✕ */
   align-items: center;
-  align-content: flex-start;
-  column-gap: 12px;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
 }
-.source-card.sb > .source-head {
-  flex-basis: 100%;
+.setup-row:last-child {
+  border-bottom: 1px solid var(--border);
 }
-/* Compact factory pills so they fit beside the checkboxes */
-.source-card.sb .file-pill {
-  padding: 3px 4px 3px 9px;
-  gap: 6px;
-}
-.source-card.sb .file-pill .pill-rows {
-  margin-right: 0;
-}
-.source-card.sc {
-  border-left-color: var(--c);
-}
-.source-card > .btn {
-  align-self: flex-start;
-}
-.source-head {
+.setup-ctrl {
   display: flex;
   align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 36px;
+}
+.setup-ctrl.pps {
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  min-height: 20px;
 }
 .slot-label {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -220,18 +211,13 @@
 .slot-label.lc {
   color: var(--c-2);
 }
-.source-tag {
-  font-size: 0.68rem;
-  color: var(--dim);
-}
 .source-clear {
-  margin-left: auto;
   background: none;
   border: none;
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.8rem;
-  padding: 2px 6px;
+  font-size: 0.85rem;
+  padding: 4px 6px;
   border-radius: var(--r-sm);
 }
 .source-clear:hover {
@@ -241,8 +227,9 @@
   display: flex;
   align-items: baseline;
   gap: 6px;
+  flex: 1;
   min-width: 0;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 .source-status strong {
@@ -258,21 +245,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-family: var(--font-mono);
   color: var(--dim);
 }
 .source-pick {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 .factory-picks {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
 }
 .factory-pick {
   display: flex;
@@ -284,22 +271,67 @@
   cursor: default;
   opacity: 0.5;
 }
-.validate-col {
+.setup-foot {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
-  gap: 6px;
-  min-width: 150px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
-.validate-col .btn {
-  padding: 12px 18px;
+.setup-foot .load-hint {
+  margin-right: auto;
+}
+.setup-foot .btn-primary {
+  padding: 10px 22px;
   font-weight: 600;
 }
 .load-hint {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: var(--muted);
-  text-align: center;
+}
+
+/* ── Data summary bar — replaces the setup card once results exist ──────── */
+.data-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.data-summary .ds-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.data-summary .ds-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+}
+.data-summary .ds-factory {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.data-summary .pill-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.data-summary .ds-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.data-summary .btn {
+  padding: 5px 13px;
 }
 
 /* ── File pill (loaded indicator) ──────────────────────────────────────── */
@@ -312,10 +344,10 @@
 .file-pill {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   border-radius: var(--r-md);
-  padding: 5px 10px;
+  padding: 3px 4px 3px 9px;
   border: 1px solid var(--border);
   background: var(--surface);
 }
@@ -359,10 +391,8 @@
 
 /* ── Key info panel ────────────────────────────────────────────────────── */
 .key-panel {
-  border-bottom: 1px solid var(--border);
-  padding: 8px 24px;
-  background: var(--surface);
-  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 .key-panel summary {
   cursor: pointer;
@@ -857,27 +887,6 @@ th.grp {
   font-weight: 600;
 }
 
-/* ── Empty state ───────────────────────────────────────────────────────── */
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--muted);
-  padding: 48px;
-  text-align: center;
-}
-.empty-state .icon {
-  font-size: 52px;
-  opacity: 0.25;
-}
-.empty-state h3 {
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--text);
-}
 
 /* ── Landing chooser (admin: Log vs Compare) ──────────────────────────────── */
 .landing {
@@ -1408,20 +1417,15 @@ th.grp {
   }
 }
 
-/* Narrower windows: Load data cards wrap — two per row, then one */
-@media (max-width: 1100px) {
-  .load-panel {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  .validate-col {
-    align-items: center;  /* keep Validate button-sized, not a full-width bar */
-  }
-  .validate-col .btn {
-    min-width: 220px;
-  }
-}
+/* Narrow windows: setup rows stack label above control */
 @media (max-width: 640px) {
-  .load-panel {
-    grid-template-columns: minmax(0, 1fr);
+  .setup-row {
+    grid-template-columns: minmax(0, 1fr) 28px;
+  }
+  .setup-row > .slot-label {
+    grid-column: 1 / -1;
+  }
+  .setup-wrap {
+    padding: 16px;
   }
 }

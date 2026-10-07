@@ -764,11 +764,12 @@ Run: `python -m pytest tests/ -v`
 | `main.tsx`                         | ReactDOM mount. You will almost never touch it.                                                                                          |
 | `App.tsx`                          | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
 | `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
-| `components/UploadStrip.tsx`       | The **Load data** bar: ACS · Costsheet · PPS cards in one row, then the **Validate** button with a ready/not-ready hint. |
+| `components/UploadStrip.tsx`       | The centred **Set up a validation** card: one row per source (ACS · Costsheet · PPS), the **Validate** button, and the collapsed matching reference. |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
-| `components/KeyInfoPanel.tsx`      | Collapsed-by-default **How matching works** reference (`<details>`): join-key chips + FOB rules. No buttons. |
+| `components/KeyInfoPanel.tsx`      | Collapsed-by-default **How matching works** reference (`<details>`) at the bottom of the setup card: join-key chips + FOB rules. |
+| `components/DataSummaryBar.tsx`    | The thin bar above the results: which data the current results were built from, plus **Change data** / **Re-validate**. |
 | `components/ResultsToolbar.tsx`    | Two fixed rows — row 1: stats + **Save** (disabled for read-only users) / Export CSV; row 2: verdict buttons, dropdowns, search, Clear Filters. |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
 | `components/SummaryDashboard.tsx`  | Validation Summary — Match/Diff/No-Key by factory & season (all users).                                                                  |
@@ -783,7 +784,7 @@ Run: `python -m pytest tests/ -v`
 > **Reading order for a full picture:** every `.ts`/`.tsx` file carries a top-of-file JSDoc block.
 > Read `lib/types.ts` → `constants.ts` → `normalize.ts` → `costsheet.ts` → `comparison.ts` →
 > `csv.ts` → `api.ts` → `App.tsx` → components (`Header` → `UploadStrip` → `FileSlot*` →
-> `KeyInfoPanel` → `ResultsToolbar` → `ResultsTable`) → `hooks/`.
+> `KeyInfoPanel` → `DataSummaryBar` → `ResultsToolbar` → `ResultsTable`) → `hooks/`.
 
 ### 0.5 Frontend — build config (`frontend/`)
 
@@ -1399,28 +1400,40 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 ## 7. UI Behaviour
 
-**TL;DR:** A Load data panel (ACS · Costsheet · PPS + the Validate button) → a collapsed "How matching works" reference → a two-row toolbar → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
+**TL;DR:** A centred **Set up a validation** card (ACS · Costsheet · PPS + Validate) → after Validate it collapses into a one-line **data summary bar** → a two-row toolbar → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
 
-### 7.1 Load data panel
+### 7.1 Setup card → data summary bar
 
-One row of equal-height cards — **ACS · Costsheet · PPS** — then the **Validate** button
-with a one-line hint underneath ("Needs ACS + a PPS factory", or which check will run:
-3-way / 2-way). Each card has a coloured left stripe for its source; once loaded it shows
-"✓ N rows" plus the source name, with ✕ in the card's top-right to clear it. Load and
-Validate sit on the same row because they are steps 1 and 2 of the same job. Below
-~1100px the cards wrap two per row, below ~640px one per row. _(Redesigned 2026-10-07: replaced the old 3-column strip with "&" /
-"VS" separators, where Validate lived in the key panel further down.)_ Disabled buttons
-render faded with a not-allowed cursor, since Validate and Load PPS are visible before they
-can be used.
+The Compare page has **two states** (`App.tsx`, `editingData` + `validatedWith`):
 
-- **ACS & Costsheet** — single button → backend fetch → "✓ N rows" in the card (✕ clears it). _(The 5-row preview tables were removed 2026-10-07 — they showed too little to judge a load and pushed the results down. Missing columns still surface as toasts or a Validate error.)_
-- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. The PPS card is the widest: checkboxes, **Load PPS** and one compact pill per loaded factory flow on one line and only wrap when out of room.
+1. **Setup** — before the first Validate, or after **Change data**. A centred card titled
+   "Set up a validation": one row per source (label · Load button or "✓ N rows" + source
+   name · ✕ to clear), then a hint ("Load ACS and at least one PPS factory." / "Ready —
+   3-way check…" / "Ready — 2-way check…") and the **Validate** button. When results already
+   exist, a **Back to results** button returns to them without re-validating. The collapsed
+   **How matching works** reference sits at the bottom of the card (§7.2).
+2. **Results** — after a successful Validate the card disappears and a one-line
+   `DataSummaryBar` sits above the toolbar: `DATA  ACS 12,345 rows · COSTSHEET 44,445 rows ·
+   PPS ● HIT ● HIC   [Change data] [↻ Re-validate]`. It shows a **snapshot taken at Validate**
+   (`validatedWith`), so it always describes the data the current results came from, even
+   if sources were changed and the user went "Back to results". **Re-validate** re-runs with
+   the data currently loaded (it does not re-fetch from the DB — clear and reload a source
+   for that).
+
+_(Redesigned 2026-10-07. History: a 3-column upload strip with "&" / "VS" separators and the
+Validate button in the key panel → a one-row "Load data" bar → this two-state flow. The
+5-row preview tables were removed the same day — they showed too little to judge a load.
+Missing columns still surface as toasts or a Validate error.)_ Disabled buttons render
+faded with a not-allowed cursor.
+
+- **ACS & Costsheet** — single button → backend fetch → "✓ N rows" in the row (✕ clears it).
+- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load PPS**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS` and a compact pill (✕ removes it) under the checkboxes.
 
 ### 7.2 How matching works (Key Info Panel)
 
-Appears once both ACS and at least one PPS factory are loaded, **collapsed** to one line
-("ⓘ How matching works"). Click to open the static reference for the join keys + FOB
-selection logic. It holds no buttons — Validate is in the Load data panel (§7.1).
+A `<details>` at the bottom of the setup card, **collapsed** to one line ("ⓘ How matching
+works"). Click to open the static reference for the join keys + FOB selection logic. It holds
+no buttons. It is not shown in the results state — open **Change data** to read it.
 
 ### 7.3 Results Table
 

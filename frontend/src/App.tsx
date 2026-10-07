@@ -8,7 +8,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import Header from './components/Header';
 import UploadStrip from './components/UploadStrip';
-import KeyInfoPanel from './components/KeyInfoPanel';
+import DataSummaryBar, { type DataSnapshot } from './components/DataSummaryBar';
 import ResultsToolbar, { type FilterCategory } from './components/ResultsToolbar';
 import ResultsTable from './components/ResultsTable';
 import { ToastProvider, useToast } from './hooks/useToast';
@@ -138,10 +138,14 @@ function AppInner() {
     setMscCodeFilter('');
   }, []);
 
-  // Guards for showing the Validate button and the KeyInfo panel.
+  // Validate needs ACS + at least one PPS factory.
   const canValidate = dataA !== null && dataBFiles.length > 0;
-  const keyPanelVisible = canValidate;
   const [validating, setValidating] = useState(false);
+  // Setup card vs. summary bar: the card shows until the first successful
+  // Validate, and again while `editingData` ("Change data" was clicked).
+  const [editingData, setEditingData] = useState(false);
+  // What the current results were built from — shown in the summary bar.
+  const [validatedWith, setValidatedWith] = useState<DataSnapshot | null>(null);
 
   // ── Validate button handler ────────────────────────────────────────────────
   // Runs the pure runComparison() and stores the result. Any thrown error
@@ -173,6 +177,12 @@ function AppInner() {
       const result = runComparison(dataA, dataBFiles, dataC, merMaster);
       setCompRows(result.rows);
       setHadResultC(dataC !== null);
+      setValidatedWith({
+        acsRows: dataA.rows.length,
+        csRows: dataC ? dataC.rows.length : null,
+        pps: dataBFiles.map((f) => ({ name: f.name, rows: f.rows.length, colorIdx: f.colorIdx })),
+      });
+      setEditingData(false);  // collapse the setup card into the summary bar
       // Pull the shared saved Error From / Done from the backend and map them
       // onto the freshly-built rows by rowKey.
       loadAnnotations();
@@ -322,22 +332,29 @@ function AppInner() {
   return (
     <div className="app">
       {header}
-      <UploadStrip
-        dataA={dataA}
-        dataC={dataC}
-        dataBFiles={dataBFiles}
-        setDataA={setDataA}
-        setDataC={setDataC}
-        setDataBFiles={setDataBFiles}
-        canValidate={canValidate}
-        onValidate={handleValidate}
-        validating={validating}
-      />
-      <KeyInfoPanel visible={keyPanelVisible} />
-
-      {showResults ? (
-        // Results panel — toolbar + table
+      {!showResults || editingData || !validatedWith ? (
+        // Setup card — before the first Validate, or after "Change data"
+        <UploadStrip
+          dataA={dataA}
+          dataC={dataC}
+          dataBFiles={dataBFiles}
+          setDataA={setDataA}
+          setDataC={setDataC}
+          setDataBFiles={setDataBFiles}
+          canValidate={canValidate}
+          onValidate={handleValidate}
+          validating={validating}
+          onCancel={showResults ? () => setEditingData(false) : undefined}
+        />
+      ) : (
+        // Results — thin data summary, then toolbar + table
         <div className="results-panel" style={{ display: 'flex' }}>
+          <DataSummaryBar
+            snapshot={validatedWith}
+            onChange={() => setEditingData(true)}
+            onRevalidate={handleValidate}
+            validating={validating}
+          />
           <ResultsToolbar
             rows={compRows}
             filteredCount={filtered.length}
@@ -377,18 +394,6 @@ function AppInner() {
             canEdit={canEdit}
           />
         </div>
-      ) : (
-        // Empty state — shown once ACS + PPS are loaded but Validate hasn't been clicked yet
-        keyPanelVisible && (
-          <div className="empty-state">
-            <div className="icon">⊙</div>
-            <h3>Ready to validate</h3>
-            <p>
-              Load ACS from DB, optionally load Costsheet, pick PPS factory(ies), then click{' '}
-              <strong>Validate</strong>.
-            </p>
-          </div>
-        )
       )}
     </div>
   );

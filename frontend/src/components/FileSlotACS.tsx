@@ -32,25 +32,27 @@ export default function FileSlotACS({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    <div className="source-card sa">
-      <div className="source-head">
-        <span className="slot-label la">ACS</span>
-        {data && (
-          <button className="source-clear" onClick={onClear} title="Clear ACS">
-            ✕
+    // Setup-card row: label · (Load button | "✓ N rows") · ✕
+    <div className="setup-row">
+      <span className="slot-label la">ACS</span>
+      <div className="setup-ctrl">
+        {data ? (
+          <div className="source-status" title={data.name}>
+            <span className="ok">✓</span> <strong>{data.rows.length.toLocaleString()}</strong> rows
+            <span className="source-name">{data.name}</span>
+          </div>
+        ) : (
+          <button className="btn btn-primary" onClick={handleLoad} disabled={loading}>
+            {loading ? 'Loading…' : 'Load ACS'}
           </button>
         )}
       </div>
       {data ? (
-        // Loaded state: row count + source name, where the Load button was.
-        <div className="source-status" title={data.name}>
-          <span className="ok">✓</span> <strong>{data.rows.length.toLocaleString()}</strong> rows
-          <span className="source-name">{data.name}</span>
-        </div>
-      ) : (
-        <button className="btn btn-primary" onClick={handleLoad} disabled={loading}>
-          {loading ? 'Loading…' : 'Load ACS'}
+        <button className="source-clear" onClick={onClear} title="Clear ACS">
+          ✕
         </button>
+      ) : (
+        <span />
       )}
     </div>
   );
