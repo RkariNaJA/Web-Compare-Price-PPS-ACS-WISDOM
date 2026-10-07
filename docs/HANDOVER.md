@@ -754,6 +754,7 @@ Run: `python -m pytest tests/ -v`
 | `merTeam.ts`    | Team Mer resolution — `merTeamsFor()` turns the winning Costsheet row's `Create CBD by` into the row's team list (or `(No Costsheet)` / `(Unassigned)`); `merTeamOptions()` builds the filter dropdown. |
 | `csv.ts`        | `exportComparisonCSV` — the export format (adds Verdict + Diff_Reason).                                                                                                                                                                                                                                                   |
 | `summary.ts`    | Match / Diff / No-Key aggregation behind the Validation Summary tab.                                                                                                                                                                                                                                                      |
+| `sourceStats.ts` | `sourceStats(rows)` — per-source numbers for the result cards: PPS rows per factory, and for ACS / Costsheet how many rows were found, compared and agreed. |
 | `api.ts`        | The only file that talks to the backend — ACS/Costsheet/PPS fetches, auth, group-admin calls.                                                                                                                                                                                                                             |
 | `types.ts`      | Shared TypeScript types (`TableData`, `PPSFile`, `CompRow`, …). Read this first to understand the data shapes.                                                                                                                                                                                                            |
 
@@ -769,7 +770,7 @@ Run: `python -m pytest tests/ -v`
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
 | `components/KeyInfoPanel.tsx`      | Collapsed-by-default **How matching works** reference (`<details>`) at the bottom of the setup card: join-key chips + FOB rules. |
-| `components/DataSummaryBar.tsx`    | The thin bar above the results: which data the current results were built from, plus **Change data** / **Re-validate**. |
+| `components/DataSummaryBar.tsx`    | The **result cards** above the results: one card per source (PPS rows compared · ACS / Costsheet coverage + FOB agreement), plus **Re-validate** / **Change data**. |
 | `components/ResultsToolbar.tsx`    | Two fixed rows — row 1: stats + **Save** (disabled for read-only users) / Export CSV; row 2: verdict buttons, dropdowns, search, Clear Filters. |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
 | `components/SummaryDashboard.tsx`  | Validation Summary — Match/Diff/No-Key by factory & season (all users).                                                                  |
@@ -1400,7 +1401,7 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 ## 7. UI Behaviour
 
-**TL;DR:** A centred **Set up a validation** card (ACS · Costsheet · PPS + Validate) → after Validate it collapses into a one-line **data summary bar** → a two-row toolbar → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
+**TL;DR:** A centred **Set up a validation** card (ACS · Costsheet · PPS + Validate) → after Validate it gives way to a row of **result cards** (one per source) → a two-row toolbar → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
 
 ### 7.1 Setup card → data summary bar
 
@@ -1412,13 +1413,21 @@ The Compare page has **two states** (`App.tsx`, `editingData` + `validatedWith`)
    3-way check…" / "Ready — 2-way check…") and the **Validate** button. When results already
    exist, a **Back to results** button returns to them without re-validating. The collapsed
    **How matching works** reference sits at the bottom of the card (§7.2).
-2. **Results** — after a successful Validate the card disappears and a one-line
-   `DataSummaryBar` sits above the toolbar: `DATA  ACS 12,345 rows · COSTSHEET 44,445 rows ·
-   PPS ● HIT ● HIC   [Change data] [↻ Re-validate]`. It shows a **snapshot taken at Validate**
-   (`validatedWith`), so it always describes the data the current results came from, even
-   if sources were changed and the user went "Back to results". **Re-validate** re-runs with
-   the data currently loaded (it does not re-fetch from the DB — clear and reload a source
-   for that).
+2. **Results** — after a successful Validate the card disappears and a row of **result
+   cards** (`DataSummaryBar`) sits above the toolbar, one per source:
+   - **PPS** — rows compared, and rows per factory.
+   - **ACS** / **Costsheet** — "Found for N of M" (PPS rows that found a row in that
+     source) with a % bar, "FOB agrees X / Y" (of the found rows in the compared currency,
+     how many prices matched), and the source's row count in the DB. If Costsheet was not
+     loaded its card says so.
+   - **Re-validate** / **Change data** buttons on the right.
+
+   The numbers come from `sourceStats(compRows)` over **all** rows, not the filtered view, so
+   they describe the run. The DB row counts are a **snapshot taken at Validate**
+   (`validatedWith`), so the cards always describe the data the current results came from,
+   even if sources were changed and the user went "Back to results". **Re-validate** re-runs
+   with the data currently loaded (it does not re-fetch from the DB — clear and reload a
+   source for that).
 
 _(Redesigned 2026-10-07. History: a 3-column upload strip with "&" / "VS" separators and the
 Validate button in the key panel → a one-row "Load data" bar → this two-state flow. The

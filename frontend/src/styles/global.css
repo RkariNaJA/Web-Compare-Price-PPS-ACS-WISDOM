@@ -289,49 +289,110 @@
   color: var(--muted);
 }
 
-/* ── Data summary bar — replaces the setup card once results exist ──────── */
-.data-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  padding: 8px 24px;
+/* ── Result cards — one per source, above the results once Validate has run ── */
+.result-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  font-size: 0.8rem;
-  color: var(--text);
   flex-shrink: 0;
 }
-.data-summary .ds-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.data-summary .ds-item {
+.result-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;  /* source colour stripe */
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.result-card.sa {
+  border-left-color: var(--a);
+  --rc-tone: var(--a);
+}
+.result-card.sb {
+  border-left-color: var(--b);
+}
+.result-card.sc {
+  border-left-color: var(--c);
+  --rc-tone: var(--c);
+}
+.result-card.rc-off {
+  opacity: 0.6;
+}
+.rc-head {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
+}
+.rc-db {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.rc-main {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.rc-main strong {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.rc-pct {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.rc-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.rc-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--rc-tone, var(--a));
+}
+.rc-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.rc-factories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   font-family: var(--font-mono);
 }
-.data-summary .ds-factory {
+.rc-factory {
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
-.data-summary .pill-color {
+.rc-factory .pill-color {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-.data-summary .ds-actions {
+.rc-actions {
   display: flex;
-  gap: 8px;
-  margin-left: auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 130px;
 }
-.data-summary .btn {
-  padding: 5px 13px;
+.rc-actions .btn {
+  padding: 6px 14px;
 }
 
 /* ── File pill (loaded indicator) ──────────────────────────────────────── */
@@ -1417,6 +1478,17 @@ th.grp {
   }
 }
 
+/* Narrower windows: result cards go two per row; the actions fill the 4th slot */
+@media (max-width: 1000px) {
+  .result-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rc-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+  }
+}
 /* Narrow windows: setup rows stack label above control */
 @media (max-width: 640px) {
   .setup-row {

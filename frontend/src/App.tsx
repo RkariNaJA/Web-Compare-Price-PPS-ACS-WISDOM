@@ -20,6 +20,7 @@ import LogDashboard from './components/LogDashboard';
 import SummaryDashboard from './components/SummaryDashboard';
 import { runComparison, verdictOf, type Verdict } from './lib/comparison';
 import { exportComparisonCSV } from './lib/csv';
+import { sourceStats } from './lib/sourceStats';
 import { fetchAnnotations, fetchMerTeamMaster, saveAnnotations } from './lib/api';
 import type { MerTeamMaster } from './lib/merTeam';
 import { PREFERRED_CURRENCY } from './lib/constants';
@@ -269,6 +270,8 @@ function AppInner() {
   const notComparedCount = filtered.filter((r) => verdictOf(r) === 'notCompared').length;
 
   const showResults = compRows.length > 0;
+  // Per-source results for the cards above the table (all rows, not the filtered view).
+  const stats = useMemo(() => sourceStats(compRows), [compRows]);
 
   const header = (
     <Header onOpenGroups={() => setAdminOpen(true)} view={view} onSetView={setView} />
@@ -351,6 +354,7 @@ function AppInner() {
         <div className="results-panel" style={{ display: 'flex' }}>
           <DataSummaryBar
             snapshot={validatedWith}
+            stats={stats}
             onChange={() => setEditingData(true)}
             onRevalidate={handleValidate}
             validating={validating}
