@@ -243,7 +243,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **4 · Pick the Costsheet FOB column per row, by the row's OWN size** — `Extended Size FOB` when `normalizeCostsheetSizeToken` says extended, else `Final FOB`. That resolver checks `EXTEND_SIZE` **first**, so `4X` and `48` (present in _both_ size lists) price as extended here while still matching as regular. It decides the **column only** — never the matching key. §6.5
 - **5 · Size-filter, then MAX(First Input Date) _within_ that subset** — 3-tier size filter (exact `szNorm` → token/substring → all candidates), then the latest date wins **inside the size-matched set**, so a newer XL record can't beat the S record you asked for. The backend's `ORDER BY date DESC, version DESC` exists only to break **date ties** (first-seen wins on a tie). An extended row whose `Extended Size FOB` is blank is reported **unmatched** rather than falling back to `Final FOB`. §6.5
   - The Costsheet lookup runs **even when ACS found nothing**, so a `noKey` row still displays its WISDOM record.
-- **6 · Team Mer from the winning row's `Created CBD by`** — the same winning row that gives Version / Cost Sheet No. supplies the creator, which `merTeam.ts` looks up in the master from `GET /get_mer_team_master` (`mer_team.py`, reading `Data/Master_MerDevTeam.xlsx`, cached by file mtime). Case/space-insensitive. A dev in several teams belongs to all of them. No Costsheet match → `(No Costsheet)`; blank / unknown creator or master not loaded → `(Unassigned)`.
+- **6 · Team Mer from the winning row's `Create CBD by`** (the view's real spelling — not "Created") — the same winning row that gives Version / Cost Sheet No. supplies the creator, which `merTeam.ts` looks up in the master from `GET /get_mer_team_master` (`mer_team.py`, reading `Data/Master_MerDevTeam.xlsx`, cached by file mtime). Case/space-insensitive. A dev in several teams belongs to all of them. No Costsheet match → `(No Costsheet)`; blank / unknown creator or master not loaded → `(Unassigned)`.
 
 #### D. The comparison & verdict — 4
 
@@ -273,6 +273,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **`SELECT *` has no `ORDER BY`.** Never rely on ACS/PPS row order; ties must be broken explicitly.
 - **`normalizeSizeToken` ≠ `normalizeCostsheetSizeToken`.** The Costsheet one checks EXTEND first, so `4X` and `48` (in _both_ size lists) resolve differently. It decides the FOB _column_ only — never the matching key.
 - **Two verdict namings.** `verdictOf` returns camelCase (`noKey`), `FilterCategory` is lowercase (`nokey`). A cast compiles and silently filters nothing.
+- **The creator column is `Create CBD by`, not `Created CBD by`.** The first build looked for "Created" and every row read `(Unassigned)` with no error — a display-only Costsheet column that fails to resolve is silent by design. If Team Mer goes blank for everyone, check the header first (see §12).
 
 ### Where the logic lives
 
@@ -514,6 +515,7 @@ backend behind **one HTTPS reverse proxy** fixes both legs at once.
 | `SESSION_LIFETIME_DAYS`                              | How long a login lasts (default 1).                                                                                                                                                                                                                                       |
 | `COOKIE_SECURE`                                      | `false` on HTTP, **`true` on HTTPS**.                                                                                                                                                                                                                                     |
 | `CORS_ALLOWED_ORIGINS`                               | Empty = reflect the caller's origin (dev). Set the FQDN at deployment.                                                                                                                                                                                                    |
+| `MER_TEAM_MASTER_PATH`                               | Team Mer master `.xlsx` (`MER_TEAM`, `MER_DEV` columns). Blank = `DashBoard\Data\Master_MerDevTeam.xlsx`. Re-read automatically when the file changes. |
 
 ### Per-group roles — editor vs read-only (✅ built 2026-07-20)
 
@@ -737,6 +739,7 @@ Deeper write-ups: backend internals → [§4.0](#40-backend-files-infrastructure
 | `test_groups_db.py`          | Groups CRUD + `resolve_perms` rules.                                        |
 | `test_logs_db.py`            | Presence / logins / changes storage.                                        |
 | `test_permissions_routes.py` | Route guards end-to-end (401 vs 403 vs 200), `/ping`, `/admin/*`.           |
+| `test_mer_team.py`           | Team Mer master loader (case/space, multi-team, blank rows, header order, mtime reload) + `/get_mer_team_master` (401 / 200 / 404 / 500). |
 
 Run: `python -m pytest tests/ -v`
 
@@ -748,6 +751,7 @@ Run: `python -m pytest tests/ -v`
 | `normalize.ts`  | Atomic helpers: join-key normalisation, size bucketing (`ALL_REG_SIZE_RB` / `ALL_EXTEND_SIZE_RB`), `extractSizeFromCBDID`, date + header parsing. Note **two** size resolvers: `normalizeSizeToken` (shared — PPS/ACS matching) and `normalizeCostsheetSizeToken` (Costsheet FOB-source only; differs for `4X` and `48`). |
 | `constants.ts`  | **Configuration single-source-of-truth** — `KEY_PAIRS` (which ACS column joins which PPS column), `REG_SIZES` / `EXTEND_SIZE`, Costsheet header aliases, file-badge colours, `MAX_B_FILES`.                                                                                                                               |
 | `costsheet.ts`  | `buildCostsheetIndex` + `lookupCostsheet` — the WISDOM side: the MAX-First-Input-Date winner rule, and the per-row choice between `Final FOB` and `Extended Size FOB`.                                                                                                                                                    |
+| `merTeam.ts`    | Team Mer resolution — `merTeamsFor()` turns the winning Costsheet row's `Create CBD by` into the row's team list (or `(No Costsheet)` / `(Unassigned)`); `merTeamOptions()` builds the filter dropdown. |
 | `csv.ts`        | `exportComparisonCSV` — the export format (adds Verdict + Diff_Reason).                                                                                                                                                                                                                                                   |
 | `summary.ts`    | Match / Diff / No-Key aggregation behind the Validation Summary tab.                                                                                                                                                                                                                                                      |
 | `api.ts`        | The only file that talks to the backend — ACS/Costsheet/PPS fetches, auth, group-admin calls.                                                                                                                                                                                                                             |
@@ -804,6 +808,7 @@ Run: `python -m pytest tests/ -v`
 | `infrastructure Document/` | The handover PDFs (EN + TH).                                                                                                                                                                      |
 | `docs/`                    | `superpowers/plans` and `superpowers/specs` — working plan/spec notes from Claude Code sessions. Not app code.                                                                                    |
 | `.gitignore`               | Keeps `.env`, `annotations.db`, `node_modules/`, and build output out of git.                                                                                                                     |
+| `Data/`                     | `Master_MerDevTeam.xlsx` — the Team Mer master (`MER_TEAM`, `MER_DEV`), maintained by the master data team. **Gitignored** (`*.xlsx`): copy it to each server by hand. |
 | `.claude/`                 | Claude Code local settings. Not part of the app.                                                                                                                                                  |
 
 ### 0.7 "I want to change X" → open Y
@@ -822,6 +827,8 @@ Run: `python -m pytest tests/ -v`
 | Extended sizes all show "No CS"                     | [§12 troubleshooting](#extended-sizes-all-show-no-cs-but-regular-sizes-are-fine) — usually a renamed view column                                         |
 | Change a column heading or add a table column       | `components/ResultsTable.tsx`                                                                                                                            |
 | Change what the CSV export contains                 | `lib/csv.ts`                                                                                                                                             |
+| Change how a row's Team Mer is decided           | `lib/merTeam.ts` → `merTeamsFor`; creator column alias in `lib/constants.ts` → `C_KEY_ALIASES.createdBy`; master loading in `mer_team.py` |
+| Team Mer shows `(Unassigned)` for everyone       | [§12 troubleshooting](#team-mer-shows-unassigned-for-every-row) |
 | Add or change an API endpoint                       | `sql_backend.py`                                                                                                                                         |
 | Point at a different SQL Server / table             | `.env` (`DB_SERVER`, `DB_DATABASE`, `DB_TABLE_*`) — see [§11.6](#116-point-at-a-different-sql-server--table)                                             |
 | Change who can log in                               | `.env` (`AD_ALLOWED_GROUPS`) + `auth_ad.py`                                                                                                              |
@@ -1964,6 +1971,16 @@ Genuinely different **USD** amounts for one style/size are _not_ a bug: 174 grou
 
 - Costsheet header names match no alias. Check the toast: `Costsheet missing columns: FOB ("Final FOB"), Date ("First Input Date"), …` — actual headers are logged to console (`[Costsheet] missing columns: … actual headers: […]`).
 - Or: no Costsheet rows exist for the PPS key — verify with a direct SQL query.
+
+### Team Mer shows (Unassigned) for every row
+
+Team Mer is the winning Costsheet row's `Create CBD by`, looked up in `Data/Master_MerDevTeam.xlsx`. Check in this order:
+
+1. **A red toast `Team Mer master not loaded: …`** — the backend could not read the master. `file not found` → copy the `.xlsx` into `DashBoard/Data/` (or set `MER_TEAM_MASTER_PATH`); `missing the MER_TEAM column` → the header row must be row 1 of the active sheet; `HTTP 404` → the running backend predates the feature, restart `serve.py`; `timed out after 10s` → the file sits on a slow share.
+2. **No toast, but the on-screen _Created CBD by_ column is blank for every row** — the view header did not resolve. Get the real header with `SELECT TOP 0 * FROM dbo.VIEW_COSTSHEET_WISDOM` and add its normalised spelling (lower-case, no spaces) to `C_KEY_ALIASES.createdBy` in `constants.ts`. Do **not** add bare `createdby` — the view also has `First Input by` / `Last Update by` style columns and a generic match is wrong.
+3. **_Created CBD by_ has values but Team Mer is still `(Unassigned)`** — those creators are simply not in the master (on 2026-10-07 about 15% of Costsheet rows, incl. the `System` account). Add them to the `.xlsx`; the next Validate picks it up, no restart.
+
+`(No Costsheet)` is different: it means no WISDOM row matched that PPS row at all (or Costsheet was not loaded), so there is no creator to look up.
 
 ### Extended sizes all show No CS but regular sizes are fine
 
