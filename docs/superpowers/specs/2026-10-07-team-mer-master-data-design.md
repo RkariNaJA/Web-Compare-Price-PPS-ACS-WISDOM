@@ -19,7 +19,7 @@ master data team maintains.
 
 | Source | What it gives | Notes |
 | ------ | ------------- | ----- |
-| `dbo.VIEW_COSTSHEET_WISDOM`, column **`Created CBD by`** | The creator's ID, e.g. `dev_alice` | Already returned — `/get_costsheet_data` does `SELECT *`. |
+| `dbo.VIEW_COSTSHEET_WISDOM`, column **`Create CBD by`** (confirmed against the live view 2026-10-07; first written here as "Created CBD by", which matched nothing) | The creator's ID, e.g. `dev_alice` | Already returned — `/get_costsheet_data` does `SELECT *`. |
 | `DashBoard/Data/Master_MerDevTeam.xlsx`, `Sheet1` | Two columns: `MER_TEAM`, `MER_DEV` | 41 data rows, 6 teams today. Gitignored (`*.xlsx`) — never committed. |
 
 `Created CBD by` values have the same form as `MER_DEV` (`dev_alice`). This has **nothing to do

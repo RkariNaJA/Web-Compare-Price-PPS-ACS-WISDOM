@@ -44,7 +44,7 @@ export const C_KEY_MAP = {
   date: 'First Input Date',
   version: 'CBD Version',          // shown as "Version" in the results table
   costSheetNo: 'Cost Sheet No.',   // shown as "Cost Sheet No" in the results table
-  createdBy: 'Created CBD by',     // who created the CBD — looked up in the Team Mer master
+  createdBy: 'Create CBD by',      // who created the CBD — looked up in the Team Mer master
 } as const;
 
 // Alternative header spellings the Costsheet view might use. Normalization drops
@@ -62,7 +62,8 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
   version: ['cbdversion', 'version'],
   costSheetNo: ['costsheetno', 'costsheetnumber', 'costsheet#'],
   // Deliberately NOT 'createdby': a generic "Created By" column must never be picked up instead.
-  createdBy: ['createdcbdby', 'cbdcreatedby'],
+  // The live view spells it 'Create CBD by'; the others are tolerated renames.
+  createdBy: ['createcbdby', 'createdcbdby', 'cbdcreatedby'],
 };
 
 // Currency the validator compares in. PPS quotes in any other currency are kept but not
