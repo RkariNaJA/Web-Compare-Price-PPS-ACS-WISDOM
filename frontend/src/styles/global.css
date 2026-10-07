@@ -144,51 +144,68 @@
   cursor: default;
 }
 
-/* ── Load data panel (one row per source + Validate) ─────────────────── */
+/* ── Load data bar: ACS · Costsheet · PPS cards + Validate, one row ───── */
 .load-panel {
+  display: grid;
+  /* minmax(0,…): cards may shrink below their content so long names truncate
+     instead of pushing Validate off-screen */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2.2fr) auto;
+  gap: 10px;
+  align-items: stretch;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  padding: 12px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   flex-shrink: 0;
 }
-.load-title {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.load-grid {
-  display: grid;
-  /* minmax(0,1fr): let columns shrink below content width so long pill names
-     don't push the ✕ buttons off-screen */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-}
-.source-row {
+.source-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: flex-start;  /* status sits right under the title, even when a card is stretched */
+  gap: 8px;
   min-width: 0;
-  min-height: 46px;
-  padding: 6px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
+  border-left-width: 3px;  /* source colour stripe */
   border-radius: var(--r-md);
   background: var(--surface-2);
 }
-.source-row.pps {
-  grid-column: 1 / -1;  /* PPS spans the full width under ACS · Costsheet */
-  flex-wrap: wrap;
+.source-card.sa {
+  border-left-color: var(--a);
 }
-.source-row > .btn {
-  flex-shrink: 0;
+.source-card.sb {
+  border-left-color: var(--b);
+  /* PPS: title on its own line, then checkboxes · Load · factory pills flow
+     on one line and wrap only when they run out of room */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  column-gap: 12px;
+}
+.source-card.sb > .source-head {
+  flex-basis: 100%;
+}
+/* Compact factory pills so they fit beside the checkboxes */
+.source-card.sb .file-pill {
+  padding: 3px 4px 3px 9px;
+  gap: 6px;
+}
+.source-card.sb .file-pill .pill-rows {
+  margin-right: 0;
+}
+.source-card.sc {
+  border-left-color: var(--c);
+}
+.source-card > .btn {
+  align-self: flex-start;
+}
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
 }
 .slot-label {
-  width: 78px;
-  flex-shrink: 0;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -202,6 +219,54 @@
 }
 .slot-label.lc {
   color: var(--c-2);
+}
+.source-tag {
+  font-size: 0.68rem;
+  color: var(--dim);
+}
+.source-clear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+}
+.source-clear:hover {
+  color: var(--mismatch);
+}
+.source-status {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.source-status strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.source-status .ok {
+  color: var(--match);
+}
+.source-name {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--dim);
+}
+.source-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .factory-picks {
   display: flex;
@@ -219,15 +284,22 @@
   cursor: default;
   opacity: 0.5;
 }
-.load-foot {
+.validate-col {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 150px;
+}
+.validate-col .btn {
+  padding: 12px 18px;
+  font-weight: 600;
 }
 .load-hint {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--muted);
+  text-align: center;
 }
 
 /* ── File pill (loaded indicator) ──────────────────────────────────────── */
@@ -246,9 +318,6 @@
   padding: 5px 10px;
   border: 1px solid var(--border);
   background: var(--surface);
-}
-.source-row > .file-pill {
-  flex: 1;  /* ACS / Costsheet: the pill fills the row where the button was */
 }
 .file-pill .pill-icon {
   font-size: 1rem;
@@ -1339,9 +1408,20 @@ th.grp {
   }
 }
 
-/* Narrow windows: ACS and Costsheet stack instead of sitting side by side */
-@media (max-width: 760px) {
-  .load-grid {
+/* Narrower windows: Load data cards wrap — two per row, then one */
+@media (max-width: 1100px) {
+  .load-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .validate-col {
+    align-items: center;  /* keep Validate button-sized, not a full-width bar */
+  }
+  .validate-col .btn {
+    min-width: 220px;
+  }
+}
+@media (max-width: 640px) {
+  .load-panel {
     grid-template-columns: minmax(0, 1fr);
   }
 }

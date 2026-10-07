@@ -764,7 +764,7 @@ Run: `python -m pytest tests/ -v`
 | `main.tsx`                         | ReactDOM mount. You will almost never touch it.                                                                                          |
 | `App.tsx`                          | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
 | `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
-| `components/UploadStrip.tsx`       | The **Load data** panel: one row per source (ACS · Costsheet side by side, PPS full width) plus the **Validate** button and its ready/not-ready hint. |
+| `components/UploadStrip.tsx`       | The **Load data** bar: ACS · Costsheet · PPS cards in one row, then the **Validate** button with a ready/not-ready hint. |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
@@ -1403,16 +1403,18 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 ### 7.1 Load data panel
 
-One panel, one row per source: **ACS · Costsheet** side by side, **PPS** full width below,
-then the **Validate** button bottom-right with a hint ("Load ACS and at least one PPS
-factory…", or which check will run). Load and Validate sit together because they are steps 1
-and 2 of the same job. _(Redesigned 2026-10-07: replaced the old 3-column strip with "&" /
+One row of equal-height cards — **ACS · Costsheet · PPS** — then the **Validate** button
+with a one-line hint underneath ("Needs ACS + a PPS factory", or which check will run:
+3-way / 2-way). Each card has a coloured left stripe for its source; once loaded it shows
+"✓ N rows" plus the source name, with ✕ in the card's top-right to clear it. Load and
+Validate sit on the same row because they are steps 1 and 2 of the same job. Below
+~1100px the cards wrap two per row, below ~640px one per row. _(Redesigned 2026-10-07: replaced the old 3-column strip with "&" /
 "VS" separators, where Validate lived in the key panel further down.)_ Disabled buttons
 render faded with a not-allowed cursor, since Validate and Load PPS are visible before they
 can be used.
 
-- **ACS & Costsheet** — single button → backend fetch → a pill with the row count (✕ clears it). _(The 5-row preview tables were removed 2026-10-07 — they showed too little to judge a load and pushed the results down. Missing columns still surface as toasts or a Validate error.)_
-- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. The checkboxes sit inline in the PPS row, with one pill per loaded factory after the Load button.
+- **ACS & Costsheet** — single button → backend fetch → "✓ N rows" in the card (✕ clears it). _(The 5-row preview tables were removed 2026-10-07 — they showed too little to judge a load and pushed the results down. Missing columns still surface as toasts or a Validate error.)_
+- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. The PPS card is the widest: checkboxes, **Load PPS** and one compact pill per loaded factory flow on one line and only wrap when out of room.
 
 ### 7.2 How matching works (Key Info Panel)
 

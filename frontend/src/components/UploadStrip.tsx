@@ -1,9 +1,9 @@
 /**
- * The "Load data" panel at the top of the app: one row per data source, then
- * the Validate button — load first, validate second, all in one place.
- * Layout: ACS · Costsheet side by side, PPS (factory picker) full width below.
+ * The "Load data" bar at the top of the app: one card per data source, then
+ * the Validate column — load first, validate second, all on one row.
+ * Layout: ACS · Costsheet · PPS cards (equal height) · Validate. Stacks on narrow screens.
  *
- * This is a pure layout/passthrough component — the source rows handle their own
+ * This is a pure layout/passthrough component — the source cards handle their own
  * state and API calls. UploadStrip just wires them to App's setters.
  */
 import type { Dispatch, SetStateAction } from 'react';
@@ -30,36 +30,33 @@ interface Props {
 export default function UploadStrip(props: Props) {
   return (
     <section className="load-panel">
-      <div className="load-title">1 · Load data</div>
-      <div className="load-grid">
-        <FileSlotACS
-          data={props.dataA}
-          onLoad={props.setDataA}
-          onClear={() => props.setDataA(null)}
-        />
-        <FileSlotCostsheet
-          data={props.dataC}
-          onLoad={props.setDataC}
-          onClear={() => props.setDataC(null)}
-        />
-        <FileSlotPPS files={props.dataBFiles} setFiles={props.setDataBFiles} />
-      </div>
-      <div className="load-foot">
-        <span className="load-hint">
-          {!props.canValidate
-            ? 'Load ACS and at least one PPS factory to validate.'
-            : props.dataC
-              ? 'Ready — 3-way check: PPS vs ACS vs Costsheet.'
-              : 'Ready — Costsheet not loaded, so the check is PPS vs ACS only.'}
-        </span>
+      <FileSlotACS
+        data={props.dataA}
+        onLoad={props.setDataA}
+        onClear={() => props.setDataA(null)}
+      />
+      <FileSlotCostsheet
+        data={props.dataC}
+        onLoad={props.setDataC}
+        onClear={() => props.setDataC(null)}
+      />
+      <FileSlotPPS files={props.dataBFiles} setFiles={props.setDataBFiles} />
+      <div className="validate-col">
         <button
           className="btn btn-primary"
           onClick={props.onValidate}
           disabled={!props.canValidate || props.validating}
-          title={props.canValidate ? 'Run 3-way validation' : 'Load ACS and at least one PPS factory'}
+          title={props.canValidate ? 'Run the validation' : 'Load ACS and at least one PPS factory'}
         >
           {props.validating ? 'Validating…' : '▶ Validate'}
         </button>
+        <span className="load-hint">
+          {!props.canValidate
+            ? 'Needs ACS + a PPS factory'
+            : props.dataC
+              ? '3-way: PPS · ACS · Costsheet'
+              : '2-way: PPS · ACS'}
+        </span>
       </div>
     </section>
   );

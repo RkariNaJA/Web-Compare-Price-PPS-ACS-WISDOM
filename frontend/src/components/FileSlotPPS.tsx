@@ -123,9 +123,12 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
   const pendingCount = factories.filter((f) => selected.has(f) && !loadedNames.has(f)).length;
 
   return (
-    // Full-width row: label · factory checkboxes · Load · one pill per loaded factory.
-    <div className="source-row pps">
-      <div className="slot-label lb">PPS</div>
+    // Card: header · (factory checkboxes + Load) · one pill per loaded factory.
+    <div className="source-card sb">
+      <div className="source-head">
+        <span className="slot-label lb">PPS</span>
+        <span className="source-tag">pick factories</span>
+      </div>
       {factoriesError ? (
         <button className="btn btn-ghost" onClick={loadFactories}>
           ⟳ Retry loading factory list
@@ -133,7 +136,7 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
       ) : !factories.length ? (
         <span className="load-hint">Loading factory list…</span>
       ) : (
-        <>
+        <div className="source-pick">
           <div className="factory-picks">
             {factories.map((fty) => {
               const loaded = loadedNames.has(fty);
@@ -155,9 +158,9 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
             onClick={handleLoad}
             disabled={loading || pendingCount === 0}
           >
-            {loading ? 'Loading…' : 'Load PPS from DB'}
+            {loading ? 'Loading…' : 'Load PPS'}
           </button>
-        </>
+        </div>
       )}
       {files.length > 0 && (
         <div className="file-pills">
