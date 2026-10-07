@@ -329,13 +329,11 @@ function AppInner() {
         setDataA={setDataA}
         setDataC={setDataC}
         setDataBFiles={setDataBFiles}
-      />
-      <KeyInfoPanel
-        visible={keyPanelVisible}
         canValidate={canValidate}
         onValidate={handleValidate}
         validating={validating}
       />
+      <KeyInfoPanel visible={keyPanelVisible} />
 
       {showResults ? (
         // Results panel — toolbar + table

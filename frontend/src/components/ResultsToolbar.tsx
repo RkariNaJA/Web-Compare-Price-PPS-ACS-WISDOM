@@ -1,12 +1,13 @@
 /**
  * Toolbar above the results table.
  *
- * Left side: stat pills showing counts (Match / Diff / No Key / Not Compared /
- * Showing). "Not Compared" only renders when non-zero, so the toolbar doesn't
- * grow for validations with no non-preferred-currency rows.
- * Right side: Season & Factory dropdowns, MSC Code & Developer combo fields
- * (type-to-filter or pick from the datalist), a search box, filter-mode
- * buttons, a Clear Filters button (full reset), and Export CSV.
+ * Two fixed rows so nothing jumps around when the window is resized:
+ *   Row 1 — stat pills (Match / Diff / No Key / Not Compared / Showing) on the
+ *           left; Unsaved marker, Save and Export CSV on the right.
+ *           "Not Compared" only renders when non-zero.
+ *   Row 2 — every filter: verdict toggle buttons, Season / Factory / Team Mer
+ *           dropdowns, MSC Code & Developer combo fields (type-to-filter or pick
+ *           from the datalist), the search box, and Clear Filters (full reset).
  *
  * All filter state lives in App.tsx — this component is purely presentational
  * (dropdown options are derived from the current rows).
@@ -110,129 +111,164 @@ export default function ResultsToolbar({
 
   return (
     <div className="results-toolbar">
-      {/* Stat pills — counts are of the *filtered* rows so they respond to search / dropdowns */}
-      <div className="stat-pill">
-        <span className="dot" style={{ background: 'var(--match)' }} /> Match{' '}
-        <span>{matchCount}</span>
-      </div>
-      <div className="stat-pill">
-        <span className="dot" style={{ background: 'var(--mismatch)' }} /> Diff{' '}
-        <span>{diffCount}</span>
-      </div>
-      <div className="stat-pill">
-        <span className="dot" style={{ background: 'var(--only)' }} /> No Key{' '}
-        <span>{noKeyCount}</span>
-      </div>
-      {notComparedCount > 0 && (
-        <div className="stat-pill" title="Quoted in a currency the validator does not compare">
-          <span className="dot" style={{ background: 'var(--notcompared)' }} /> Not Compared{' '}
-          <span>{notComparedCount}</span>
+      {/* Row 1 — counts on the left, Save / Export on the right */}
+      <div className="toolbar-row">
+        {/* Stat pills — counts are of the *filtered* rows so they respond to search / dropdowns */}
+        <div className="stat-pill">
+          <span className="dot" style={{ background: 'var(--match)' }} /> Match{' '}
+          <span>{matchCount}</span>
         </div>
-      )}
-      <div className="stat-pill">
-        Showing <span>{filteredCount}</span>
+        <div className="stat-pill">
+          <span className="dot" style={{ background: 'var(--mismatch)' }} /> Diff{' '}
+          <span>{diffCount}</span>
+        </div>
+        <div className="stat-pill">
+          <span className="dot" style={{ background: 'var(--only)' }} /> No Key{' '}
+          <span>{noKeyCount}</span>
+        </div>
+        {notComparedCount > 0 && (
+          <div className="stat-pill" title="Quoted in a currency the validator does not compare">
+            <span className="dot" style={{ background: 'var(--notcompared)' }} /> Not Compared{' '}
+            <span>{notComparedCount}</span>
+          </div>
+        )}
+        <div className="stat-pill">
+          Showing <span>{filteredCount}</span>
+        </div>
+        <div className="toolbar-actions">
+          {dirty && (
+            <span
+              style={{
+                fontSize: '.72rem',
+                color: 'var(--only)',
+                alignSelf: 'center',
+                whiteSpace: 'nowrap',
+              }}
+              title="You have unsaved changes — click Save"
+            >
+              ● Unsaved
+            </span>
+          )}
+          <button
+            className="btn btn-primary"
+            style={{ padding: '5px 13px' }}
+            onClick={onSave}
+            disabled={saving || !canEdit}
+            title={
+              canEdit
+                ? 'Save Error From / Done — shared with everyone'
+                : 'Read-only — ask an admin for edit access'
+            }
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button className="btn btn-ghost" style={{ padding: '5px 13px' }} onClick={onExport}>
+            Export CSV
+          </button>
+        </div>
       </div>
 
-      {/* Season dropdown — empty string means "all", any other value filters exactly */}
-      <select
-        className="filter-select"
-        value={seasonFilter}
-        onChange={(e) => setSeasonFilter(e.target.value)}
-      >
-        <option value="">All Seasons</option>
-        {seasons.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-      <select
-        className="filter-select"
-        value={factoryFilter}
-        onChange={(e) => setFactoryFilter(e.target.value)}
-      >
-        <option value="">All Factories</option>
-        {factories.map((f) => (
-          <option key={f} value={f}>
-            {f}
-          </option>
-        ))}
-      </select>
-      {/* Team Mer — exact pick. A row whose creator is in two teams appears under both. */}
-      <select
-        className="filter-select"
-        value={merTeamFilter}
-        onChange={(e) => setMerTeamFilter(e.target.value)}
-      >
-        <option value="">All Team Mer</option>
-        {merTeams.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
-      {/* MSC Code filter — combined text field + dropdown (a native <datalist> combobox).
-          Same logic as the Developer filter: type to free-filter or pick a suggestion;
-          App.tsx matches case-insensitive substring on MSC_CODE. */}
-      <input
-        className="filter-select"
-        list="msc-code-options"
-        placeholder="All MSC Codes"
-        value={mscCodeFilter}
-        onChange={(e) => setMscCodeFilter(e.target.value)}
-      />
-      <datalist id="msc-code-options">
-        {mscCodes.map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
-      {/* Developer filter — combined text field + dropdown (a native <datalist> combobox).
-          Type to free-filter, or click to pick a suggestion. Empty = all; otherwise
-          App.tsx matches case-insensitive substring on RESPONSIBLE_DEVELOPER. */}
-      <input
-        className="filter-select"
-        list="developer-options"
-        placeholder="All Developers"
-        value={developerFilter}
-        onChange={(e) => setDeveloperFilter(e.target.value)}
-      />
-      <datalist id="developer-options">
-        {developers.map((d) => (
-          <option key={d} value={d} />
-        ))}
-      </datalist>
-      <input
-        className="search-box"
-        placeholder="Search…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {/* Filter-mode buttons + export. margin-left:auto (CSS) pushes this to the right edge.
-          "All" clears the set; the other three toggle their respective categories. */}
-      <div className="filter-btns">
-        <button
-          className={`filter-btn${allActive ? ' active' : ''}`}
-          onClick={clearFilters}
-          title="Clear all category filters"
+      {/* Row 2 — every filter together, ending with Clear Filters.
+          "All" clears the verdict set; the others toggle their category. */}
+      <div className="toolbar-row">
+        <div className="filter-btns">
+          <button
+            className={`filter-btn${allActive ? ' active' : ''}`}
+            onClick={clearFilters}
+            title="Clear all category filters"
+          >
+            All
+          </button>
+          {(['match', 'diff', 'nokey', 'notcompared'] as FilterCategory[]).map((c) => {
+            const active = activeFilters.has(c);
+            const label =
+              c === 'match' ? 'Match' : c === 'diff' ? 'Diff' : c === 'nokey' ? 'No Key' : 'Not Compared';
+            return (
+              <button
+                key={c}
+                className={`filter-btn${active ? ' active' : ''}`}
+                onClick={() => toggleFilter(c)}
+                title={active ? `Hide ${label}` : `Show ${label}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {/* Season dropdown — empty string means "all", any other value filters exactly */}
+        <select
+          className="filter-select"
+          value={seasonFilter}
+          onChange={(e) => setSeasonFilter(e.target.value)}
         >
-          All
-        </button>
-        {(['match', 'diff', 'nokey', 'notcompared'] as FilterCategory[]).map((c) => {
-          const active = activeFilters.has(c);
-          const label =
-            c === 'match' ? 'Match' : c === 'diff' ? 'Diff' : c === 'nokey' ? 'No Key' : 'Not Compared';
-          return (
-            <button
-              key={c}
-              className={`filter-btn${active ? ' active' : ''}`}
-              onClick={() => toggleFilter(c)}
-              title={active ? `Hide ${label}` : `Show ${label}`}
-            >
-              {label}
-            </button>
-          );
-        })}
+          <option value="">All Seasons</option>
+          {seasons.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select
+          className="filter-select"
+          value={factoryFilter}
+          onChange={(e) => setFactoryFilter(e.target.value)}
+        >
+          <option value="">All Factories</option>
+          {factories.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        {/* Team Mer — exact pick. A row whose creator is in two teams appears under both. */}
+        <select
+          className="filter-select"
+          value={merTeamFilter}
+          onChange={(e) => setMerTeamFilter(e.target.value)}
+        >
+          <option value="">All Team Mer</option>
+          {merTeams.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        {/* MSC Code filter — combined text field + dropdown (a native <datalist> combobox).
+            Same logic as the Developer filter: type to free-filter or pick a suggestion;
+            App.tsx matches case-insensitive substring on MSC_CODE. */}
+        <input
+          className="filter-select"
+          list="msc-code-options"
+          placeholder="All MSC Codes"
+          value={mscCodeFilter}
+          onChange={(e) => setMscCodeFilter(e.target.value)}
+        />
+        <datalist id="msc-code-options">
+          {mscCodes.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+        {/* Developer filter — combined text field + dropdown (a native <datalist> combobox).
+            Type to free-filter, or click to pick a suggestion. Empty = all; otherwise
+            App.tsx matches case-insensitive substring on RESPONSIBLE_DEVELOPER. */}
+        <input
+          className="filter-select"
+          list="developer-options"
+          placeholder="All Developers"
+          value={developerFilter}
+          onChange={(e) => setDeveloperFilter(e.target.value)}
+        />
+        <datalist id="developer-options">
+          {developers.map((d) => (
+            <option key={d} value={d} />
+          ))}
+        </datalist>
+        <input
+          className="search-box"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         {/* Full reset: verdict categories + dropdowns + combo fields + search.
             Dimmed when there is nothing to clear. */}
         <button
@@ -247,35 +283,6 @@ export default function ResultsToolbar({
           title="Reset all filters and search"
         >
           ✕ Clear Filters
-        </button>
-        {dirty && (
-          <span
-            style={{
-              fontSize: '.72rem',
-              color: 'var(--only)',
-              alignSelf: 'center',
-              whiteSpace: 'nowrap',
-            }}
-            title="You have unsaved changes — click Save"
-          >
-            ● Unsaved
-          </span>
-        )}
-        <button
-          className="btn btn-primary"
-          style={{ padding: '5px 13px' }}
-          onClick={onSave}
-          disabled={saving || !canEdit}
-          title={
-            canEdit
-              ? 'Save Error From / Done — shared with everyone'
-              : 'Read-only — ask an admin for edit access'
-          }
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button className="btn btn-ghost" style={{ padding: '5px 13px' }} onClick={onExport}>
-          Export CSV
         </button>
       </div>
     </div>

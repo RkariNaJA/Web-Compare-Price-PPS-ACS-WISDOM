@@ -1,37 +1,23 @@
 /**
- * Explanatory panel that appears between the upload strip and the results.
+ * "How matching works" — a collapsed-by-default reference panel between the
+ * Load data panel and the results.
  *
  * Shows the 5 join-key pairs as chips and a step-by-step explanation of the FOB
- * selection logic (both ACS and Costsheet). Hosts the primary "Validate" button —
- * clicking it triggers runComparison() in App.tsx.
+ * selection logic (both ACS and Costsheet). Static: nothing here changes what
+ * the comparison does. (The Validate button lives in UploadStrip.)
  */
 import { KEY_PAIRS } from '../lib/constants';
 
 interface Props {
   visible: boolean;         // whether ACS + at least one PPS are loaded
-  canValidate: boolean;     // whether all preconditions for Validate are met
-  onValidate: () => void;   // App's Validate handler
-  validating: boolean;      // Validate is running (waiting on the Team Mer master) — blocks double clicks
 }
 
-export default function KeyInfoPanel({ visible, canValidate, onValidate, validating }: Props) {
+export default function KeyInfoPanel({ visible }: Props) {
   if (!visible) return null;
   return (
-    <div className="key-panel">
-      {/* Header row: title + Validate button */}
-      <h2>
-        <span>Validation Configuration — Fixed Keys &amp; FOB Logic</span>
-        <div className="map-actions">
-          <button
-            className="btn btn-primary"
-            onClick={onValidate}
-            disabled={!canValidate || validating}
-            title={canValidate ? 'Run 3-way validation' : 'Load ACS and at least one PPS factory'}
-          >
-            {validating ? 'Validating…' : 'Validate'}
-          </button>
-        </div>
-      </h2>
+    // Native <details>: collapsed by default, opens with one click, no state needed.
+    <details className="key-panel">
+      <summary>ⓘ How matching works — fixed keys &amp; FOB logic</summary>
 
       {/* Chips showing the ACS ⇄ PPS column mapping (driven from KEY_PAIRS) */}
       <div className="key-grid">
@@ -84,7 +70,7 @@ export default function KeyInfoPanel({ visible, canValidate, onValidate, validat
         <span className="hl-c">Season + Style + Color + Size + <code>LOCAL_QUOTE_AMOUNT</code></span>{' '}
         (newest by <code>INSERT_DATE</code>). Uses the <strong>real</strong> size, not the converted
         bucket, so every size is kept · different quotes stay as separate rows.
-    </div>
-    </div>
+      </div>
+    </details>
   );
 }

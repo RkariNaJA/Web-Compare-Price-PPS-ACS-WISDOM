@@ -32,22 +32,19 @@ export default function FileSlotACS({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    <div className="file-slot left">
-      <div className="slot-label la">ACS DB — ACS</div>
+    <div className="source-row">
+      <div className="slot-label la">ACS</div>
       {data ? (
-        // Loaded state: pill with row count.
-        <>
-          <div className="file-pill" style={{ justifyContent: 'flex-start' }}>
-            <span className="pill-icon">🗄️</span>
-            <span className="pill-name">{data.name}</span>
-            <span className="pill-rows">{data.rows.length} rows</span>
-            <span className="pill-del" onClick={onClear}>
-              ✕
-            </span>
-          </div>
-        </>
+        // Loaded state: pill with row count — sits where the Load button was.
+        <div className="file-pill">
+          <span className="pill-icon">🗄️</span>
+          <span className="pill-name">{data.name}</span>
+          <span className="pill-rows">{data.rows.length.toLocaleString()} rows</span>
+          <span className="pill-del" onClick={onClear} title="Clear ACS">
+            ✕
+          </span>
+        </div>
       ) : (
-        // Empty state: single "Load ACS from DB" button.
         <button className="btn btn-primary" onClick={handleLoad} disabled={loading}>
           {loading ? 'Loading…' : 'Load ACS from DB'}
         </button>

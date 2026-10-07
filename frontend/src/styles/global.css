@@ -144,50 +144,55 @@
   cursor: default;
 }
 
-/* ── Upload strip (3 file slots) ────────────────────────────────────────── */
-.upload-strip {
-  display: grid;
-  /* minmax(0,1fr): let columns shrink below content width so long pill names
-     don't push the right slot (and its remove buttons) off-screen */
-  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr);
-  gap: 0;
+/* ── Load data panel (one row per source + Validate) ─────────────────── */
+.load-panel {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  padding: 10px 24px;
-  align-items: start;
+  padding: 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex-shrink: 0;
 }
-.upload-strip .vs {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
+.load-title {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--dim);
+  text-transform: uppercase;
+  color: var(--muted);
 }
-.file-slot {
-  display: flex;
-  flex-direction: column;
+.load-grid {
+  display: grid;
+  /* minmax(0,1fr): let columns shrink below content width so long pill names
+     don't push the ✕ buttons off-screen */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+}
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+  min-height: 46px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
 }
-.file-slot.left {
-  padding-right: 12px;
+.source-row.pps {
+  grid-column: 1 / -1;  /* PPS spans the full width under ACS · Costsheet */
+  flex-wrap: wrap;
 }
-.file-slot.mid {
-  padding: 0 12px;
-}
-.file-slot.right {
-  padding-left: 12px;
+.source-row > .btn {
+  flex-shrink: 0;
 }
 .slot-label {
+  width: 78px;
+  flex-shrink: 0;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-bottom: 2px;
 }
 .slot-label.la {
   color: var(--a-2);
@@ -198,61 +203,52 @@
 .slot-label.lc {
   color: var(--c-2);
 }
-
-/* ── Dropzone ───────────────────────────────────────────────────────────── */
-.dropzone {
-  border: 2px dashed var(--border);
-  border-radius: var(--r-md);
-  padding: 10px;
-  text-align: center;
+.factory-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8rem;
+}
+.factory-pick {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   cursor: pointer;
-  position: relative;
-  transition: border-color 0.2s, background 0.2s;
 }
-.dropzone:hover,
-.dropzone.drag {
-  background: var(--surface-2);
+.factory-pick.loaded {
+  cursor: default;
+  opacity: 0.5;
 }
-.dropzone.la:hover,
-.dropzone.la.drag {
-  border-color: var(--a);
+.load-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
 }
-.dropzone.lb:hover,
-.dropzone.lb.drag {
-  border-color: var(--b);
-}
-.dropzone.lc:hover,
-.dropzone.lc.drag {
-  border-color: var(--c);
-}
-.dropzone input[type='file'] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-}
-.dropzone p {
-  font-size: 0.78rem;
+.load-hint {
+  font-size: 0.75rem;
   color: var(--muted);
-  line-height: 1.5;
 }
 
 /* ── File pill (loaded indicator) ──────────────────────────────────────── */
 .file-pills {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 .file-pill {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  background: var(--surface-2);
   border-radius: var(--r-md);
-  padding: 8px 12px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
+  background: var(--surface);
+}
+.source-row > .file-pill {
+  flex: 1;  /* ACS / Costsheet: the pill fills the row where the button was */
 }
 .file-pill .pill-icon {
   font-size: 1rem;
@@ -295,20 +291,22 @@
 /* ── Key info panel ────────────────────────────────────────────────────── */
 .key-panel {
   border-bottom: 1px solid var(--border);
-  padding: 14px 32px;
+  padding: 8px 24px;
   background: var(--surface);
   flex-shrink: 0;
 }
-.key-panel h2 {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.key-panel summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
   color: var(--muted);
+  user-select: none;
+}
+.key-panel summary:hover {
+  color: var(--text);
+}
+.key-panel[open] summary {
   margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 .key-grid {
   display: flex;
@@ -369,10 +367,6 @@
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
-.map-actions {
-  display: flex;
-  gap: 10px;
-}
 .btn {
   border: none;
   border-radius: var(--r-md);
@@ -392,6 +386,12 @@
 }
 .btn-primary:hover {
   opacity: 0.88;
+}
+/* Validate and Load PPS are visible before they can be used — make that obvious. */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .btn-ghost {
   background: var(--surface-2);
@@ -425,13 +425,24 @@
 }
 .results-toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 24px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  flex-wrap: wrap;
   flex-shrink: 0;
+}
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;  /* Save / Export pinned to the right of row 1 */
 }
 .stat-pill {
   display: flex;
@@ -455,7 +466,6 @@
 .filter-btns {
   display: flex;
   gap: 6px;
-  margin-left: auto;
 }
 .filter-btn {
   background: var(--surface-2);
@@ -486,6 +496,13 @@
 }
 .search-box {
   width: 180px;
+}
+/* Toolbar row 2: the text fields shrink so every filter + Clear fits one row */
+.toolbar-row input.filter-select,
+.toolbar-row .search-box {
+  flex: 1 1 120px;
+  min-width: 100px;
+  max-width: 200px;
 }
 .search-box:focus,
 .filter-select:focus,
@@ -1319,5 +1336,12 @@ th.grp {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Narrow windows: ACS and Costsheet stack instead of sitting side by side */
+@media (max-width: 760px) {
+  .load-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

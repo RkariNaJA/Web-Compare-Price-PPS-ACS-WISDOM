@@ -764,12 +764,12 @@ Run: `python -m pytest tests/ -v`
 | `main.tsx`                         | ReactDOM mount. You will almost never touch it.                                                                                          |
 | `App.tsx`                          | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
 | `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
-| `components/UploadStrip.tsx`       | Composes the three file slots below.                                                                                                     |
+| `components/UploadStrip.tsx`       | The **Load data** panel: one row per source (ACS · Costsheet side by side, PPS full width) plus the **Validate** button and its ready/not-ready hint. |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
-| `components/KeyInfoPanel.tsx`      | Shows the join keys + FOB rules, holds the **Validate** button.                                                                          |
-| `components/ResultsToolbar.tsx`    | Stats, search, filter buttons, CSV export, **Save** (disabled for read-only users).                                                      |
+| `components/KeyInfoPanel.tsx`      | Collapsed-by-default **How matching works** reference (`<details>`): join-key chips + FOB rules. No buttons. |
+| `components/ResultsToolbar.tsx`    | Two fixed rows — row 1: stats + **Save** (disabled for read-only users) / Export CSV; row 2: verdict buttons, dropdowns, search, Clear Filters. |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
 | `components/SummaryDashboard.tsx`  | Validation Summary — Match/Diff/No-Key by factory & season (all users).                                                                  |
 | `components/GroupAdmin.tsx`        | Admin screen: create groups, add members, set edit/manage (manager-only).                                                                |
@@ -1399,18 +1399,26 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 ## 7. UI Behaviour
 
-**TL;DR:** Three source slots (ACS · Costsheet · PPS) → a Key Info panel with the Validate button → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
+**TL;DR:** A Load data panel (ACS · Costsheet · PPS + the Validate button) → a collapsed "How matching works" reference → a two-row toolbar → a results grid with a sticky-right verdict column, a render cap for large sets, and a stack of filters + search.
 
-### 7.1 Upload Strip
+### 7.1 Load data panel
 
-Three slots left-to-right: **ACS · Costsheet · PPS**.
+One panel, one row per source: **ACS · Costsheet** side by side, **PPS** full width below,
+then the **Validate** button bottom-right with a hint ("Load ACS and at least one PPS
+factory…", or which check will run). Load and Validate sit together because they are steps 1
+and 2 of the same job. _(Redesigned 2026-10-07: replaced the old 3-column strip with "&" /
+"VS" separators, where Validate lived in the key panel further down.)_ Disabled buttons
+render faded with a not-allowed cursor, since Validate and Load PPS are visible before they
+can be used.
 
 - **ACS & Costsheet** — single button → backend fetch → a pill with the row count (✕ clears it). _(The 5-row preview tables were removed 2026-10-07 — they showed too little to judge a load and pushed the results down. Missing columns still surface as toasts or a Validate error.)_
-- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. _(It still reuses the `.dropzone` CSS class for styling — there are no drag handlers on it.)_
+- **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. The checkboxes sit inline in the PPS row, with one pill per loaded factory after the Load button.
 
-### 7.2 Key Info Panel
+### 7.2 How matching works (Key Info Panel)
 
-Appears once both ACS and at least one PPS file are loaded. Static reference for the join keys + FOB selection logic. The **Validate** button lives here — clicking it runs `runComparison()`.
+Appears once both ACS and at least one PPS factory are loaded, **collapsed** to one line
+("ⓘ How matching works"). Click to open the static reference for the join keys + FOB
+selection logic. It holds no buttons — Validate is in the Load data panel (§7.1).
 
 ### 7.3 Results Table
 
@@ -1447,7 +1455,7 @@ Equality is `fobEq`, the same epsilon-`0.0001` numeric check (string fallback) t
 
 Applied in this order (in `App.tsx`'s `useMemo`):
 
-1. **Filter mode** (buttons, top-right of toolbar): `all` / `match` / `diff` / `nokey`.
+1. **Filter mode** (buttons at the start of toolbar row 2): `all` / `match` / `diff` / `nokey` / `notcompared`.
 2. **Season dropdown** — exact match.
 3. **Factory dropdown** — exact match.
 4. **MSC Code field** — a native `<datalist>` combo (type to free-filter, or click a suggestion). Case-insensitive **substring** match on PPS `MSC_CODE`; suggestions are the distinct non-empty codes in the current results, sorted.

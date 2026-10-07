@@ -35,22 +35,20 @@ export default function FileSlotCostsheet({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    <div className="file-slot mid">
-      <div className="slot-label lc">Wisdom DB — Costsheet</div>
+    <div className="source-row">
+      <div className="slot-label lc">Costsheet</div>
       {data ? (
-        // Loaded state: pill with row count.
-        <>
-          <div className="file-pill" style={{ justifyContent: 'flex-start' }}>
-            <span className="pill-icon">📊</span>
-            <span className="pill-name">{data.name}</span>
-            <span className="pill-rows">{data.rows.length} rows</span>
-            <span className="pill-del" onClick={onClear}>
-              ✕
-            </span>
-          </div>
-        </>
+        // Loaded state: pill with row count — sits where the Load button was.
+        <div className="file-pill">
+          <span className="pill-icon">📊</span>
+          <span className="pill-name">{data.name}</span>
+          <span className="pill-rows">{data.rows.length.toLocaleString()} rows</span>
+          <span className="pill-del" onClick={onClear} title="Clear Costsheet">
+            ✕
+          </span>
+        </div>
       ) : (
-        // Empty state: green-tinted button (matches --c colour token).
+        // Green-tinted button (matches --c colour token). Optional source.
         <button className="btn btn-primary green" onClick={handleLoad} disabled={loading}>
           {loading ? 'Loading…' : 'Load Costsheet from DB'}
         </button>

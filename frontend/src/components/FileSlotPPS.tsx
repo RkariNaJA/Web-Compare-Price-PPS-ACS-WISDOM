@@ -123,76 +123,60 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
   const pendingCount = factories.filter((f) => selected.has(f) && !loadedNames.has(f)).length;
 
   return (
-    <div className="file-slot right">
-      <div className="slot-label lb">PPS DB — pick factory</div>
-
-      {/* Factory picker — replaces the old file drop zone */}
-      <div className="dropzone lb" style={{ cursor: 'default' }}>
-        {factoriesError ? (
-          <button className="btn btn-ghost" onClick={loadFactories}>
-            ⟳ Retry loading factory list
-          </button>
-        ) : !factories.length ? (
-          <p>Loading factory list…</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-              {factories.map((fty) => {
-                const loaded = loadedNames.has(fty);
-                return (
-                  <label
-                    key={fty}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      cursor: loaded ? 'default' : 'pointer',
-                      opacity: loaded ? 0.5 : 1,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={loaded || selected.has(fty)}
-                      disabled={loaded || loading}
-                      onChange={() => toggleFactory(fty)}
-                    />
-                    {fty}
-                  </label>
-                );
-              })}
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={handleLoad}
-              disabled={loading || pendingCount === 0}
-            >
-              {loading ? 'Loading…' : 'Load PPS from DB'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {files.length > 0 && (
+    // Full-width row: label · factory checkboxes · Load · one pill per loaded factory.
+    <div className="source-row pps">
+      <div className="slot-label lb">PPS</div>
+      {factoriesError ? (
+        <button className="btn btn-ghost" onClick={loadFactories}>
+          ⟳ Retry loading factory list
+        </button>
+      ) : !factories.length ? (
+        <span className="load-hint">Loading factory list…</span>
+      ) : (
         <>
-          <div className="file-pills">
-            {files.map((f, i) => {
-              const c = FILE_COLORS[f.colorIdx];
+          <div className="factory-picks">
+            {factories.map((fty) => {
+              const loaded = loadedNames.has(fty);
               return (
-                <div key={f.name} className="file-pill">
-                  <span className="pill-color" style={{ background: c.hex }} />
-                  <span className="pill-icon">🗄️</span>
-                  <span className="pill-name" title={f.name}>
-                    {f.name}
-                  </span>
-                  <span className="pill-rows">{f.rows.length} rows</span>
-                  <span className="pill-del" onClick={() => remove(i)}>
-                    ✕
-                  </span>
-                </div>
+                <label key={fty} className={`factory-pick${loaded ? ' loaded' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={loaded || selected.has(fty)}
+                    disabled={loaded || loading}
+                    onChange={() => toggleFactory(fty)}
+                  />
+                  {fty}
+                </label>
               );
             })}
           </div>
+          <button
+            className="btn btn-primary"
+            onClick={handleLoad}
+            disabled={loading || pendingCount === 0}
+          >
+            {loading ? 'Loading…' : 'Load PPS from DB'}
+          </button>
         </>
+      )}
+      {files.length > 0 && (
+        <div className="file-pills">
+          {files.map((f, i) => {
+            const c = FILE_COLORS[f.colorIdx];
+            return (
+              <div key={f.name} className="file-pill">
+                <span className="pill-color" style={{ background: c.hex }} />
+                <span className="pill-name" title={f.name}>
+                  {f.name}
+                </span>
+                <span className="pill-rows">{f.rows.length.toLocaleString()} rows</span>
+                <span className="pill-del" onClick={() => remove(i)} title={`Clear ${f.name}`}>
+                  ✕
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
