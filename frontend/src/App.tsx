@@ -20,7 +20,8 @@ import LogDashboard from './components/LogDashboard';
 import SummaryDashboard from './components/SummaryDashboard';
 import { runComparison, verdictOf, type Verdict } from './lib/comparison';
 import { exportComparisonCSV } from './lib/csv';
-import { fetchAnnotations, saveAnnotations } from './lib/api';
+import { fetchAnnotations, fetchMerTeamMaster, saveAnnotations } from './lib/api';
+import type { MerTeamMaster } from './lib/merTeam';
 import { PREFERRED_CURRENCY } from './lib/constants';
 import type { AppView, CompRow, PPSFile, RowAnnotation, TableData } from './lib/types';
 
@@ -108,6 +109,7 @@ function AppInner() {
   const [search, setSearch] = useState('');
   const [seasonFilter, setSeasonFilter] = useState('');
   const [factoryFilter, setFactoryFilter] = useState('');
+  const [merTeamFilter, setMerTeamFilter] = useState('');
   const [developerFilter, setDeveloperFilter] = useState('');
   const [mscCodeFilter, setMscCodeFilter] = useState('');
 
@@ -131,6 +133,7 @@ function AppInner() {
     setSearch('');
     setSeasonFilter('');
     setFactoryFilter('');
+    setMerTeamFilter('');
     setDeveloperFilter('');
     setMscCodeFilter('');
   }, []);
@@ -138,12 +141,13 @@ function AppInner() {
   // Guards for showing the Validate button and the KeyInfo panel.
   const canValidate = dataA !== null && dataBFiles.length > 0;
   const keyPanelVisible = canValidate;
+  const [validating, setValidating] = useState(false);
 
   // ── Validate button handler ────────────────────────────────────────────────
   // Runs the pure runComparison() and stores the result. Any thrown error
   // (missing ACS columns, etc.) becomes an error toast; warnings from the
   // comparison also toast individually.
-  const handleValidate = () => {
+  const handleValidate = async () => {
     if (!dataA) {
       toast('Load ACS DB data first', 'err');
       return;
@@ -152,8 +156,21 @@ function AppInner() {
       toast('Load at least one PPS factory from DB', 'err');
       return;
     }
+    // Re-read the Team Mer master on every Validate so a replaced .xlsx shows up
+    // without a reload. A failure is not fatal: rows read "(Unassigned)".
+    // `validating` disables the button meanwhile, so a slow fetch can't queue
+    // duplicate runs (fetchMerTeamMaster gives up after 10s).
+    setValidating(true);
+    let merMaster: MerTeamMaster | null = null;
     try {
-      const result = runComparison(dataA, dataBFiles, dataC);
+      merMaster = await fetchMerTeamMaster();
+    } catch (err) {
+      toast(`Team Mer master not loaded: ${(err as Error).message}`, 'err');
+    } finally {
+      setValidating(false);
+    }
+    try {
+      const result = runComparison(dataA, dataBFiles, dataC, merMaster);
       setCompRows(result.rows);
       setHadResultC(dataC !== null);
       // Pull the shared saved Error From / Done from the backend and map them
@@ -199,6 +216,10 @@ function AppInner() {
         (r) => (r.keys.find((k) => k.aName === 'FactoryCode')?.bVal || '') === factoryFilter,
       );
     }
+    // Team Mer: exact pick; a row in several teams matches any of them.
+    if (merTeamFilter) {
+      rows = rows.filter((r) => r.merTeams.includes(merTeamFilter));
+    }
     // Developer / MSC Code combo fields: case-insensitive substring so partial
     // typing works, while selecting a full suggestion from the datalist still
     // matches exactly.
@@ -221,13 +242,15 @@ function AppInner() {
           r.dbFobValue.toLowerCase().includes(q) ||
           r.mscCode.toLowerCase().includes(q) ||
           r.responsibleDeveloper.toLowerCase().includes(q) ||
+          r.merTeams.some((t) => t.toLowerCase().includes(q)) ||
+          r.cCreatedBy.toLowerCase().includes(q) ||
           r.srcFile.toLowerCase().includes(q) ||
           (r.cFinalFobValue || '').toLowerCase().includes(q) ||
           (r.cExtFobValue || '').toLowerCase().includes(q),
       );
     }
     return rows;
-  }, [compRows, activeFilters, search, seasonFilter, factoryFilter, developerFilter, mscCodeFilter]);
+  }, [compRows, activeFilters, search, seasonFilter, factoryFilter, merTeamFilter, developerFilter, mscCodeFilter]);
 
   // Counts reflect the *filtered* rows so the toolbar stats respond to the filters.
   const matchCount = filtered.filter((r) => verdictOf(r) === 'match').length;
@@ -311,6 +334,7 @@ function AppInner() {
         visible={keyPanelVisible}
         canValidate={canValidate}
         onValidate={handleValidate}
+        validating={validating}
       />
 
       {showResults ? (
@@ -332,6 +356,8 @@ function AppInner() {
             setSeasonFilter={setSeasonFilter}
             factoryFilter={factoryFilter}
             setFactoryFilter={setFactoryFilter}
+            merTeamFilter={merTeamFilter}
+            setMerTeamFilter={setMerTeamFilter}
             developerFilter={developerFilter}
             setDeveloperFilter={setDeveloperFilter}
             mscCodeFilter={mscCodeFilter}

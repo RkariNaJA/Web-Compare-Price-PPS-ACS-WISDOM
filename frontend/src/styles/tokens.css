@@ -31,6 +31,9 @@
   --c-2: #566448;
   --c-glow: transparent;
 
+  --m: #6b7f86;          /* Master Data — nezumi teal-grey */
+  --m-2: #4f6268;
+
   /* status — earth tones */
   --match: #5f7355;
   --mismatch: #9e5a52;
@@ -82,6 +85,8 @@
     --b-2: #d4b5ae;
     --c: #9ba687;
     --c-2: #b0ba9e;
+    --m: #9fb3b9;
+    --m-2: #b6c6cb;
 
     --match: #8ca07e;
     --mismatch: #c08a82;
@@ -109,6 +114,7 @@
   --a: #5e6678;  --a-2: #4d5568;
   --b: #a5817a;  --b-2: #8a5a51;
   --c: #79866a;  --c-2: #566448;
+  --m: #6b7f86;  --m-2: #4f6268;
   --match: #5f7355;
   --mismatch: #9e5a52;
   --only: #8a6f37;
@@ -131,6 +137,7 @@
   --a: #8a93ac;  --a-2: #a3abbf;
   --b: #c6a29a;  --b-2: #d4b5ae;
   --c: #9ba687;  --c-2: #b0ba9e;
+  --m: #9fb3b9;  --m-2: #b6c6cb;
   --match: #8ca07e;
   --mismatch: #c08a82;
   --only: #c7ac72;

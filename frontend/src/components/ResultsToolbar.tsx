@@ -18,6 +18,7 @@
  *     view Match+Diff together while hiding No Key rows.
  */
 import type { CompRow } from '../lib/types';
+import { merTeamOptions } from '../lib/merTeam';
 
 // A single filter category. App owns a Set<FilterCategory>; empty set = show all.
 export type FilterCategory = 'match' | 'diff' | 'nokey' | 'notcompared';
@@ -38,6 +39,8 @@ interface Props {
   setSeasonFilter: (s: string) => void;
   factoryFilter: string;
   setFactoryFilter: (s: string) => void;
+  merTeamFilter: string;
+  setMerTeamFilter: (s: string) => void;
   developerFilter: string;
   setDeveloperFilter: (s: string) => void;
   mscCodeFilter: string;
@@ -66,6 +69,8 @@ export default function ResultsToolbar({
   setSeasonFilter,
   factoryFilter,
   setFactoryFilter,
+  merTeamFilter,
+  setMerTeamFilter,
   developerFilter,
   setDeveloperFilter,
   mscCodeFilter,
@@ -93,13 +98,15 @@ export default function ResultsToolbar({
   const mscCodes = [
     ...new Set(rows.map((r) => r.mscCode || '').filter(Boolean)),
   ].sort();
+  const merTeams = merTeamOptions(rows);
 
   // "All" is active when NO category is selected — i.e. everything passes through.
   const allActive = activeFilters.size === 0;
 
   // Is there anything for the "Clear Filters" button to reset?
   const anyFilterActive =
-    !allActive || !!search || !!seasonFilter || !!factoryFilter || !!developerFilter || !!mscCodeFilter;
+    !allActive || !!search || !!seasonFilter || !!factoryFilter || !!merTeamFilter ||
+    !!developerFilter || !!mscCodeFilter;
 
   return (
     <div className="results-toolbar">
@@ -148,6 +155,19 @@ export default function ResultsToolbar({
         {factories.map((f) => (
           <option key={f} value={f}>
             {f}
+          </option>
+        ))}
+      </select>
+      {/* Team Mer — exact pick. A row whose creator is in two teams appears under both. */}
+      <select
+        className="filter-select"
+        value={merTeamFilter}
+        onChange={(e) => setMerTeamFilter(e.target.value)}
+      >
+        <option value="">All Team Mer</option>
+        {merTeams.map((t) => (
+          <option key={t} value={t}>
+            {t}
           </option>
         ))}
       </select>

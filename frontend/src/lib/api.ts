@@ -4,6 +4,7 @@
  * VITE_BACKEND_URL — set it in .env if the backend is running elsewhere.
  */
 import type { ActiveUser, AuthUser, ChangeEvent, LoginEvent, RowAnnotation, TableData } from './types';
+import type { MerTeamMaster } from './merTeam';
 
 // Backend base URL. `import.meta.env` is Vite's compile-time env injection.
 // Default: same host the page was served from, port 5001 — survives DHCP
@@ -62,6 +63,36 @@ export async function fetchPPSFactories(): Promise<string[]> {
 // GET /get_pps_data?ftycode=… — all dbo.PPS rows for one factory (raw, no dedupe).
 export const fetchPPS = (ftycode: string) =>
   fetchTable(`/get_pps_data?ftycode=${encodeURIComponent(ftycode)}`);
+
+// GET /get_mer_team_master — lower-cased MER_DEV → [MER_TEAM, …] from the master .xlsx.
+// Parses the body even on 404/500 so the backend's message reaches the toast.
+// Validate waits on this, so it gives up after `timeoutMs` instead of hanging
+// (e.g. MER_TEAM_MASTER_PATH on a slow network share).
+export async function fetchMerTeamMaster(timeoutMs = 10000): Promise<MerTeamMaster> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/get_mer_team_master?t=${Date.now()}`, {
+      ...CREDS,
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status === 401) {
+    unauthorizedHandler?.();
+    throw new Error('Your session expired — please sign in again.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+  return data.master as MerTeamMaster;
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // Older sessions (from before this feature) may lack perms; default to read-only

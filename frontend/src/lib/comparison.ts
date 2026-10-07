@@ -17,6 +17,7 @@ import {
   normalizeJoinKey,
 } from './normalize';
 import { buildCostsheetIndex, lookupCostsheet } from './costsheet';
+import { merTeamsFor, type MerTeamMaster } from './merTeam';
 
 // Aggregate output for the UI: rows for the table, plus quick counts and any
 // non-fatal warnings that should be shown as toasts.
@@ -187,11 +188,13 @@ function dedupePPSRows(fileB: PPSFile): Row[] {
 // Main comparison entry point. Called from App.tsx when the user clicks Validate.
 // Throws (via toast in App) if ACS is missing required columns; warnings are
 // non-fatal and returned in the result.
+// merMaster: Team Mer master (null = not loaded → matched rows read "(Unassigned)").
 // ─────────────────────────────────────────────────────────────────────────────
 export function runComparison(
   dataA: TableData,
   dataBFiles: PPSFile[],
   dataC: TableData | null,
+  merMaster: MerTeamMaster | null = null,
 ): CompareResult {
   const warnings: string[] = [];
 
@@ -383,6 +386,12 @@ export function runComparison(
       // so noKeyMatch rows can still show WISDOM data if it exists.
       const cResult = lookupCostsheet(cIdx, bConvertedSize, cJoinKey, cJoinKeyNC);
 
+      // Team Mer: who created the winning Costsheet row's CBD, looked up in the
+      // master. Computed once here so the ACS-hit and no-key branches agree.
+      const cMatchedForTeam = cResult?.matched ?? false;
+      const cCreatedBy = cResult && cMatchedForTeam ? cResult.createdByVal : '';
+      const merTeams = merTeamsFor(cCreatedBy, cMatchedForTeam, merMaster);
+
       // ── HAPPY PATH: ACS row found ────────────────────────────────────────
       if (rowA) {
         const keyDisplay: KeyDisplay[] = KEY_PAIRS.map((kp) => {
@@ -486,6 +495,8 @@ export function runComparison(
           cExtFobValue,
           cVersionVal,
           cCostSheetNo,
+          cCreatedBy,
+          merTeams,
           cDateStr,
           cMatch,
           cMatched: cResult?.matched ?? false,
@@ -570,6 +581,8 @@ export function runComparison(
           cExtFobValue,
           cVersionVal,
           cCostSheetNo,
+          cCreatedBy,
+          merTeams,
           cDateStr,
           cMatch,
           cMatched: cResult?.matched ?? false,

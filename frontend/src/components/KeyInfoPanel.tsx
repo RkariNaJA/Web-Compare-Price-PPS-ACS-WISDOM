@@ -11,9 +11,10 @@ interface Props {
   visible: boolean;         // whether ACS + at least one PPS are loaded
   canValidate: boolean;     // whether all preconditions for Validate are met
   onValidate: () => void;   // App's Validate handler
+  validating: boolean;      // Validate is running (waiting on the Team Mer master) — blocks double clicks
 }
 
-export default function KeyInfoPanel({ visible, canValidate, onValidate }: Props) {
+export default function KeyInfoPanel({ visible, canValidate, onValidate, validating }: Props) {
   if (!visible) return null;
   return (
     <div className="key-panel">
@@ -24,10 +25,10 @@ export default function KeyInfoPanel({ visible, canValidate, onValidate }: Props
           <button
             className="btn btn-primary"
             onClick={onValidate}
-            disabled={!canValidate}
+            disabled={!canValidate || validating}
             title={canValidate ? 'Run 3-way validation' : 'Load ACS and at least one PPS factory'}
           >
-            Validate
+            {validating ? 'Validating…' : 'Validate'}
           </button>
         </div>
       </h2>

@@ -235,7 +235,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **4 · Flag comparability** — a row is comparable when `LOCAL_CURRENCY` is USD **or blank**. A non-USD quote can't be compared against a USD FOB, so its comparison is **skipped**, not failed → verdict `notCompared`, and it never inflates Diff.
 - **5 · Build the stable `rowKey`** — `FTYCODE | Season | Style | Colour | ORIG_SIZE | amount`, trimmed + lowercased. Same fields as the de-dup key plus factory, so a saved Error From / Done annotation maps back to exactly one row after every re-validation. `comparison.ts` → `makeRowKey`
 
-#### C. WISDOM / Costsheet side (`dbo.VIEW_COSTSHEET_WISDOM`) — 5
+#### C. WISDOM / Costsheet side (`dbo.VIEW_COSTSHEET_WISDOM`) — 6
 
 - **1 · Resolve headers by alias** — the view gets renamed columns, so each logical column (`fob`, `extFob`, `date`, …) is matched against `C_KEY_ALIASES` after dropping spaces/underscores/dots/hyphens. A missing _critical_ column is a **warning, not a crash** — the 3-way check degrades to 2-way. `costsheet.ts`
 - **2 · Normalise bare group sizes** — `ALL_REG_SIZE` / `ALL_EXTEND_SIZE` gain the `_RB` suffix so they line up with how ACS and PPS spell the same buckets.
@@ -243,6 +243,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **4 · Pick the Costsheet FOB column per row, by the row's OWN size** — `Extended Size FOB` when `normalizeCostsheetSizeToken` says extended, else `Final FOB`. That resolver checks `EXTEND_SIZE` **first**, so `4X` and `48` (present in _both_ size lists) price as extended here while still matching as regular. It decides the **column only** — never the matching key. §6.5
 - **5 · Size-filter, then MAX(First Input Date) _within_ that subset** — 3-tier size filter (exact `szNorm` → token/substring → all candidates), then the latest date wins **inside the size-matched set**, so a newer XL record can't beat the S record you asked for. The backend's `ORDER BY date DESC, version DESC` exists only to break **date ties** (first-seen wins on a tie). An extended row whose `Extended Size FOB` is blank is reported **unmatched** rather than falling back to `Final FOB`. §6.5
   - The Costsheet lookup runs **even when ACS found nothing**, so a `noKey` row still displays its WISDOM record.
+- **6 · Team Mer from the winning row's `Created CBD by`** — the same winning row that gives Version / Cost Sheet No. supplies the creator, which `merTeam.ts` looks up in the master from `GET /get_mer_team_master` (`mer_team.py`, reading `Data/Master_MerDevTeam.xlsx`, cached by file mtime). Case/space-insensitive. A dev in several teams belongs to all of them. No Costsheet match → `(No Costsheet)`; blank / unknown creator or master not loaded → `(Unassigned)`.
 
 #### D. The comparison & verdict — 4
 
@@ -720,8 +721,9 @@ Deeper write-ups: backend internals → [§4.0](#40-backend-files-infrastructure
 | `annotations_db.py`    | SQLite store for the **Error From / Done** columns. `save()` upserts and also returns the change diffs the audit log records.                                                                                     |
 | `groups_db.py`         | SQLite store for the **app's own groups & permissions**. `resolve_perms(username)` runs at login (most-permissive wins; no group = read-only).                                                                    |
 | `logs_db.py`           | SQLite store for the **admin Log page** — presence, login events, change history. Append-only, UTC timestamps, Sunday–Saturday weeks.                                                                             |
+| `mer_team.py`          | **Team Mer master** — reads `Data/Master_MerDevTeam.xlsx` (`MER_TEAM`, `MER_DEV`; path override `MER_TEAM_MASTER_PATH`), caches by file mtime, serves `GET /get_mer_team_master`. The `.xlsx` is gitignored: **copy it to the server's `Data/` folder by hand.** |
 | `annotations.db`       | The **one SQLite file** all three `*_db.py` modules share (WAL). Everything the app persists locally. Backup = copy this file. Gitignored.                                                                        |
-| `requirements.txt`     | Runtime deps: Flask, flask-cors, pyodbc, ldap3, python-dotenv, waitress.                                                                                                                                          |
+| `requirements.txt`     | Runtime deps: Flask, flask-cors, pyodbc, ldap3, python-dotenv, waitress, openpyxl.                                                                                                                                          |
 | `requirements-dev.txt` | Test-only dep: pytest.                                                                                                                                                                                            |
 | `.env`                 | **All config + secrets**, gitignored — AD settings, local account, `FLASK_SECRET_KEY`, `INITIAL_ADMINS`, CORS. Never commit.                                                                                      |
 | `.env.example`         | Committed placeholder template — same keys, dummy values. Copy to `.env` and fill in.                                                                                                                             |

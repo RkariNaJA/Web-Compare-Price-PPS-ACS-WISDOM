@@ -609,6 +609,9 @@ table.result thead th.hb {
 table.result thead th.hc {
   color: var(--c-2);
 }
+table.result thead th.hm {
+  color: var(--m-2);
+}
 table.result thead th.hrow {
   color: var(--muted);
 }

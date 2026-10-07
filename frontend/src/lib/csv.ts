@@ -46,6 +46,8 @@ export function exportComparisonCSV(
   if (!rows.length) return;
   const hdr = [
     'Row',
+    'Team_Mer',
+    'Created_CBD_By',
     'MSC_CODE',
     'RESPONSIBLE_DEVELOPER',
     'Season_B',
@@ -74,6 +76,8 @@ export function exportComparisonCSV(
     lines.push(
       [
         r.rowIdx,
+        r.merTeams.join(', '),
+        r.cCreatedBy,
         r.mscCode,
         r.responsibleDeveloper,
         ...r.keys.map((k) => k.bVal),

@@ -12,6 +12,7 @@ import auth_ad
 import annotations_db
 import groups_db
 import logs_db
+import mer_team
 
 # Load DashBoard/.env (AD / local-auth / session config) before reading any config.
 load_dotenv()
@@ -74,6 +75,10 @@ def require_manage(view):
             return jsonify({"error": "manage permission required"}), 403
         return view(*args, **kwargs)
     return wrapped
+
+
+# Team Mer master (Data/Master_MerDevTeam.xlsx) — route lives in mer_team.py.
+mer_team.register_routes(app, login_required)
 
 
 # ── Auth routes ──────────────────────────────────────────────────────────────
@@ -486,7 +491,8 @@ def index():
         '&nbsp;&nbsp;<b>/get_file_a_data</b> — dbo.ACS<br>'
         '&nbsp;&nbsp;<b>/get_pps_factories</b> — dbo.PPS factory list<br>'
         '&nbsp;&nbsp;<b>/get_pps_data?ftycode=…</b> — dbo.PPS rows for one factory<br>'
-        '&nbsp;&nbsp;<b>/get_costsheet_data</b> — dbo.VIEW_COSTSHEET_WISDOM'
+        '&nbsp;&nbsp;<b>/get_costsheet_data</b> — dbo.VIEW_COSTSHEET_WISDOM<br>'
+        '&nbsp;&nbsp;<b>/get_mer_team_master</b> — Team Mer master (.xlsx)'
     )
 
 

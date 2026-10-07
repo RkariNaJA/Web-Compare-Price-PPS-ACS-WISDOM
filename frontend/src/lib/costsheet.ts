@@ -28,6 +28,7 @@ export interface CostsheetEntry {
   extFobVal: string;    // raw `Extended Size FOB` cell (display-only; shown in its own column)
   versionVal: string;      // CBD Version as a trimmed string
   costSheetNoVal: string;  // Cost Sheet No. as a trimmed string
+  createdByVal: string;    // `Created CBD by` — drives Team Mer
 }
 
 // The full precomputed index. rawIndex is keyed by season|style|color|factory;
@@ -50,6 +51,7 @@ export interface CostsheetMatch {
   sizeNorm: string;
   versionVal: string;      // CBD Version of the winning Costsheet row
   costSheetNoVal: string;  // Cost Sheet No. of the winning Costsheet row
+  createdByVal: string;    // `Created CBD by` of the winning Costsheet row
   matched: boolean;   // false = nothing suitable found
 }
 
@@ -74,6 +76,7 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
   // Extra display-only columns — absence is not fatal (they just render as em-dashes).
   const versionIdx = findCostsheetIdx(hdr, 'version');
   const costSheetNoIdx = findCostsheetIdx(hdr, 'costSheetNo');
+  const createdByIdx = findCostsheetIdx(hdr, 'createdBy');  // display-only, like Version
 
   // Collect any critical columns that couldn't be resolved — the toolbar will warn the user.
   const missing: string[] = [];
@@ -109,8 +112,9 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
     const extFobVal = extFobIdx !== -1 ? String(row[extFobIdx] ?? '').trim() : '';
     const versionVal = versionIdx !== -1 ? String(row[versionIdx] ?? '').trim() : '';
     const costSheetNoVal = costSheetNoIdx !== -1 ? String(row[costSheetNoIdx] ?? '').trim() : '';
+    const createdByVal = createdByIdx !== -1 ? String(row[createdByIdx] ?? '').trim() : '';
 
-    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, finalFobVal, extFobVal, versionVal, costSheetNoVal };
+    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, finalFobVal, extFobVal, versionVal, costSheetNoVal, createdByVal };
 
     // Full 4-part key (color included)
     const key = [
@@ -165,6 +169,7 @@ export function lookupCostsheet(
     sizeNorm: '',
     versionVal: '',
     costSheetNoVal: '',
+    createdByVal: '',
     matched: false,
   };
   if (!candidates.length) return empty;
@@ -214,6 +219,7 @@ export function lookupCostsheet(
     sizeNorm: best.szNorm || '',
     versionVal: best.versionVal || '',
     costSheetNoVal: best.costSheetNoVal || '',
+    createdByVal: best.createdByVal || '',
     matched: true,
   };
 }

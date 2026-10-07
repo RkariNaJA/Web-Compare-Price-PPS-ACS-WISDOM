@@ -6,7 +6,8 @@
  *
  * Layout — two header rows describe grouped columns; the second row has the
  * sub-labels. When Costsheet is loaded (hasC=true), the WISDOM SIZE / WISDOM
- * FINAL FOB / WISDOM EXT SIZE FOB / Max Input Date columns appear. The rightmost "ACS Match?" column
+ * FINAL FOB / WISDOM EXT SIZE FOB / Max Input Date columns appear. A "Master Data" group
+ * (Team Mer, Created CBD by) sits right after the # column. The rightmost "ACS Match?" column
  * is position:sticky right so the verdict stays visible while the table scrolls.
  *
  * All colour classes (cell-match / cell-miss / cell-empty / cell-c / etc.) come
@@ -16,6 +17,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { CompRow, RowAnnotation } from '../lib/types';
 import { verdictOf } from '../lib/comparison';
 import { PREFERRED_CURRENCY } from '../lib/constants';
+import { NO_COSTSHEET, UNASSIGNED } from '../lib/merTeam';
 
 interface Props {
   rows: CompRow[];               // already filtered by App
@@ -72,7 +74,7 @@ export default function ResultsTable({
   // fixed), and let the user drag the right edge of any header cell.
   // +4 leaf columns before the sticky "ACS Match?" verdict: the user-filled
   // "Error From" / "Done" pair, plus "Changed By" / "Changed On" attribution.
-  const colCount = hasC ? 24 : 18; // leaf columns, must match the header rows below
+  const colCount = hasC ? 26 : 20; // leaf columns, must match the header rows below
   const tableRef = useRef<HTMLTableElement>(null);
   const [colWidths, setColWidths] = useState<number[] | null>(null);
   const dragRef = useRef<{ idx: number; startX: number; startW: number; lastW: number } | null>(
@@ -136,9 +138,9 @@ export default function ResultsTable({
   // Leaf-column indices that shift depending on whether Costsheet is loaded.
   // Order matches the header rows.
   const ci = {
-    used: hasC ? 11 : 10,
-    ppsFob: hasC ? 12 : 11,
-    acsFob: hasC ? 13 : 12,
+    used: hasC ? 13 : 12,
+    ppsFob: hasC ? 14 : 13,
+    acsFob: hasC ? 15 : 14,
   };
 
   const totalW = colWidths ? colWidths.reduce((a, b) => a + b, 0) : 0;
@@ -196,8 +198,9 @@ export default function ResultsTable({
           {/* Header row 1 — top-level column groupings. rowSpan cells cross both rows. */}
           <tr>
             <th className="hrow" rowSpan={2}>#{resizer(0)}</th>
-            <th className="hb" rowSpan={2}>MSC_CODE{resizer(1)}</th>
-            <th className="hb" rowSpan={2}>RESPONSIBLE_DEVELOPER{resizer(2)}</th>
+            <th className="hm grp" colSpan={2}>Master Data</th>
+            <th className="hb" rowSpan={2}>MSC_CODE{resizer(3)}</th>
+            <th className="hb" rowSpan={2}>RESPONSIBLE_DEVELOPER{resizer(4)}</th>
             <th className="ha" colSpan={5}>🔑 Key Columns</th>
             {/* Size Comparison spans 2 columns by default, 3 when Costsheet is loaded */}
             <th className="hlogic grp" colSpan={hasC ? 3 : 2}>Size Comparison</th>
@@ -208,8 +211,8 @@ export default function ResultsTable({
               <>
                 <th className="hc grp">WISDOM FINAL FOB</th>
                 <th className="hc grp">WISDOM EXT SIZE FOB</th>
-                <th className="hc" rowSpan={2}>Version{resizer(16)}</th>
-                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(17)}</th>
+                <th className="hc" rowSpan={2}>Version{resizer(18)}</th>
+                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(19)}</th>
                 <th className="hc">Max Input Date</th>
               </>
             )}
@@ -224,22 +227,24 @@ export default function ResultsTable({
           </tr>
           {/* Header row 2 — sub-labels for each grouped column */}
           <tr>
-            <th className="ha">Season{resizer(3)}</th>
-            <th className="ha">Size{resizer(4)}</th>
-            <th className="ha">Style{resizer(5)}</th>
-            <th className="ha">Color{resizer(6)}</th>
-            <th className="ha">Factory{resizer(7)}</th>
-            <th className="hlogic grp">PPS SIZE{resizer(8)}</th>
-            <th className="hlogic">ACS CBDID SIZE{resizer(9)}</th>
-            {hasC && <th className="hc">WISDOM SIZE{resizer(10)}</th>}
+            <th className="hm grp">Team Mer{resizer(1)}</th>
+            <th className="hm">Created CBD by{resizer(2)}</th>
+            <th className="ha">Season{resizer(5)}</th>
+            <th className="ha">Size{resizer(6)}</th>
+            <th className="ha">Style{resizer(7)}</th>
+            <th className="ha">Color{resizer(8)}</th>
+            <th className="ha">Factory{resizer(9)}</th>
+            <th className="hlogic grp">PPS SIZE{resizer(10)}</th>
+            <th className="hlogic">ACS CBDID SIZE{resizer(11)}</th>
+            {hasC && <th className="hc">WISDOM SIZE{resizer(12)}</th>}
             <th className="hlogic grp">Used{resizer(ci.used)}</th>
             <th className="hb grp">Value{resizer(ci.ppsFob)}</th>
             <th className="ha grp">Value{resizer(ci.acsFob)}</th>
             {hasC && (
               <>
-                <th className="hc grp">Value{resizer(14)}</th>
-                <th className="hc grp">Value{resizer(15)}</th>
-                <th className="hc">Max Date{resizer(18)}</th>
+                <th className="hc grp">Value{resizer(16)}</th>
+                <th className="hc grp">Value{resizer(17)}</th>
+                <th className="hc">Max Date{resizer(20)}</th>
               </>
             )}
           </tr>
@@ -431,6 +436,20 @@ export default function ResultsTable({
             return (
               <tr key={row.rowIdx}>
                 <td className="row-num">{row.rowIdx}</td>
+                {/* Master Data: Team Mer from the master file (labels dimmed), and the
+                    Costsheet creator it was looked up from. */}
+                <td
+                  className={
+                    row.merTeams.length === 1 &&
+                    (row.merTeams[0] === NO_COSTSHEET || row.merTeams[0] === UNASSIGNED)
+                      ? 'cell-empty'
+                      : undefined
+                  }
+                  title={row.merTeams.join(', ')}
+                >
+                  {row.merTeams.join(', ')}
+                </td>
+                <td title={row.cCreatedBy}>{row.cCreatedBy || '—'}</td>
                 {/* MSC_CODE + RESPONSIBLE_DEVELOPER — display-only values taken straight
                     from the uploaded PPS "File Compare". Shown before the key columns.
                     Full value available on hover via title. */}

@@ -70,6 +70,8 @@ export interface CompRow {
   cExtFobValue: string;        // Costsheet `Extended Size FOB` of the winning row (display column)
   cVersionVal: string;         // Costsheet "CBD Version" (shown as "Version")
   cCostSheetNo: string;        // Costsheet "Cost Sheet No."
+  cCreatedBy: string;          // Costsheet "Created CBD by" of the winning row ('' when no Costsheet match)
+  merTeams: string[];          // Team Mer(s) from the master file, or one '(No Costsheet)' / '(Unassigned)' label
   cDateStr: string;            // "First Input Date" of the winning Costsheet row (YYYY-MM-DD, local)
   cMatch: boolean | null;      // did LOCAL_QUOTE_AMOUNT equal the size-picked Costsheet FOB?
   cMatched: boolean;           // did we even find a Costsheet row for this key/size?
