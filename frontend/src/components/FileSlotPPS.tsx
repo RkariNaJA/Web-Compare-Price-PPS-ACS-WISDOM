@@ -16,7 +16,6 @@ import { FILE_COLORS, MAX_B_FILES, STRICT_B_COLS } from '../lib/constants';
 import { fetchPPS, fetchPPSFactories } from '../lib/api';
 import { normalizeSizeToken } from '../lib/normalize';
 import { useToast } from '../hooks/useToast';
-import PreviewTable from './PreviewTable';
 
 interface Props {
   files: PPSFile[];
@@ -42,7 +41,7 @@ function toPPSRows(data: TableData): { headers: string[]; rows: Row[] } {// Func
   const rows = data.rows.map((r) => keptIdx.map((i) => r[i] ?? ''));
 
   // Preserve the raw SIZE_DATA in a shadow column ORIG_SIZE_DATA before
-  // normalising, so the preview + display can still show "S" while the
+  // normalising, so the display can still show "S" while the
   // comparison uses "ALL_REG_SIZE_RB".
   // Will get 2 column (SIZE_DATA [data after drop some column], ORIG_SIZE_DATA[Original Column])
   const sizeIdx = headers.indexOf('SIZE_DATA');
@@ -120,31 +119,6 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
     setFiles((prev) => prev.filter((_, i) => i !== idx).map((f, i) => ({ ...f, colorIdx: i })));
   };
 
-  // Build a combined preview: first 5 rows across all loaded factories, each row
-  // tagged with its source's colorIdx so the preview can show a coloured dot.
-  const combinedPreview = (() => {
-    if (!files.length) return null;
-    const headers = files[0].headers.filter(
-      (h) => h !== 'ORIG_SIZE_DATA' && h !== 'INSERT_DATE',
-    );
-    const previewRows: { row: Row; colorIdx: number }[] = [];
-    for (const f of files) {
-      const origIdx = f.headers.indexOf('ORIG_SIZE_DATA');
-      for (const r of f.rows) {
-        const row: Row = headers.map((h) => {
-          const i = f.headers.indexOf(h);
-          if (h === 'SIZE_DATA' && origIdx !== -1) return (r as Row)[origIdx];
-          return i !== -1 ? (r as Row)[i] ?? '' : '';
-        });
-        previewRows.push({ row, colorIdx: f.colorIdx });
-        if (previewRows.length >= 5) break;
-      }
-      if (previewRows.length >= 5) break;
-    }
-    return { headers, previewRows };
-  })();
-
-  const totalRows = files.reduce((s, f) => s + f.rows.length, 0);
   const loadedNames = new Set(files.map((f) => f.name));
   const pendingCount = factories.filter((f) => selected.has(f) && !loadedNames.has(f)).length;
 
@@ -218,23 +192,6 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
               );
             })}
           </div>
-
-          {combinedPreview && (
-            <>
-              <div className="preview-title">
-                <span>Preview</span>
-                <span>
-                  {totalRows} rows across {files.length} factor{files.length > 1 ? 'ies' : 'y'}
-                </span>
-              </div>
-              <PreviewTable
-                headers={combinedPreview.headers}
-                rows={combinedPreview.previewRows.map((p) => p.row)}
-                colorIndices={combinedPreview.previewRows.map((p) => p.colorIdx)}
-                rowColors={FILE_COLORS}
-              />
-            </>
-          )}
         </>
       )}
     </div>

@@ -768,7 +768,6 @@ Run: `python -m pytest tests/ -v`
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
-| `components/PreviewTable.tsx`      | Shared mini preview table used by all three slots.                                                                                       |
 | `components/KeyInfoPanel.tsx`      | Shows the join keys + FOB rules, holds the **Validate** button.                                                                          |
 | `components/ResultsToolbar.tsx`    | Stats, search, filter buttons, CSV export, **Save** (disabled for read-only users).                                                      |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
@@ -936,7 +935,7 @@ header text, and everything else is dropped at ingest:
 | `SIZE_DATA`             | Normalised to `ALL_REG_SIZE_RB` / `ALL_EXTEND_SIZE_RB` / literal                                           |
 | `LOCAL_QUOTE_AMOUNT`    | The value being validated                                                                                  |
 | `LOCAL_CURRENCY`        | Which currency that amount is in — `USD` or `THB`. Drives `preferUSDRows` and the **Not Compared** verdict |
-| `INSERT_DATE`           | Newest-wins tie-break inside `dedupePPSRows`. Hidden from the PPS preview                                  |
+| `INSERT_DATE`           | Newest-wins tie-break inside `dedupePPSRows`. Never displayed                                             |
 | `ORIG_SIZE_DATA`        | (Added) preserves the raw `SIZE_DATA` for display                                                          |
 
 The kept-column list is `STRICT_B_COLS` in `src/lib/constants.ts`. `MSC_CODE` / `RESPONSIBLE_DEVELOPER` come straight from `dbo.PPS` (they are not part of ACS/Costsheet). Rows where every one of these columns is empty are filtered out.
@@ -1406,7 +1405,7 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 
 Three slots left-to-right: **ACS · Costsheet · PPS**.
 
-- **ACS & Costsheet** — single button → backend fetch → preview.
+- **ACS & Costsheet** — single button → backend fetch → a pill with the row count (✕ clears it). _(The 5-row preview tables were removed 2026-10-07 — they showed too little to judge a load and pushed the results down. Missing columns still surface as toasts or a Validate error.)_
 - **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS`. _(It still reuses the `.dropzone` CSS class for styling — there are no drag handlers on it.)_
 
 ### 7.2 Key Info Panel
@@ -1950,7 +1949,7 @@ the caller's `can_edit`. See the go-live checklist for the full list.
 
 Symptom: a PPS row with a blank `COLOR` displays the FOB of a _specific_ colourway. Reported as style `STYLE-B` showing **6.00** (colourway `084`) instead of **5.00** (`ALL_SOLID`).
 
-1. Check the ACS preview. If a style appears **twice** with `ColorwayCode` `ALL` and `SOLID`, `expand_colorway_rows` is splitting `ALL_SOLID` — the backend is running code from before 2026-08-06. See [§4.3](#43-colorwaycode-row-expansion).
+1. Check the ACS data: open `http://<backend>:5001/get_file_a_data` while logged in (or query `dbo.ACS`) and search for the style. If it appears **twice** with `ColorwayCode` `ALL` and `SOLID`, `expand_colorway_rows` is splitting `ALL_SOLID` — the backend is running code from before 2026-08-06. See [§4.3](#43-colorwaycode-row-expansion).
 2. Confirm on the server: `findstr /C:"COLORWAY_NO_SPLIT_PREFIX" sql_backend.py` → 2 hits means the fix is present.
 3. **Restart `serve.py` after copying it.** Waitress loads the module once at startup and never reloads, so a corrected file on disk changes nothing until restart. This has bitten twice.
 

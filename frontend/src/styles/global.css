@@ -147,7 +147,7 @@
 /* ── Upload strip (3 file slots) ────────────────────────────────────────── */
 .upload-strip {
   display: grid;
-  /* minmax(0,1fr): let columns shrink below content width so wide previews
+  /* minmax(0,1fr): let columns shrink below content width so long pill names
      don't push the right slot (and its remove buttons) off-screen */
   grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr);
   gap: 0;
@@ -290,55 +290,6 @@
 }
 .file-pill .pill-del:hover {
   color: var(--mismatch);
-}
-
-/* ── Preview tables (inline mini-preview) ──────────────────────────────── */
-.preview-container {
-  margin-top: 6px;
-  max-height: 70px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  display: none;
-}
-.preview-container.active {
-  display: block;
-}
-.preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.6rem;
-  font-family: var(--font-mono);
-}
-.preview-table th {
-  position: sticky;
-  top: 0;
-  background: var(--surface-3);
-  color: var(--muted);
-  padding: 4px 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  white-space: nowrap;
-}
-.preview-table td {
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  white-space: nowrap;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.preview-title {
-  font-size: 0.62rem;
-  color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 4px;
-  display: flex;
-  justify-content: space-between;
 }
 
 /* ── Key info panel ────────────────────────────────────────────────────── */

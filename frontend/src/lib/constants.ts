@@ -72,7 +72,7 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
 export const PREFERRED_CURRENCY = 'USD';
 
 // When loading a PPS file, keep ONLY these columns. Everything else is dropped
-// so the comparison focuses on what matters and the preview stays readable.
+// so the comparison only carries the columns it uses.
 // MSC_CODE / RESPONSIBLE_DEVELOPER are kept for display in the results table
 // (they come straight from the uploaded PPS "File Compare", not from ACS/Costsheet).
 export const STRICT_B_COLS = [
