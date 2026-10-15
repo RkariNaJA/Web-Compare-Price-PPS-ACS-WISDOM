@@ -881,9 +881,10 @@ th.grp {
   border-left: 2px solid var(--border-2);
 }
 
-/* ── User-filled annotation columns (Error From / Done) ───────────────────
+/* ── User-filled annotation columns (Error From / Done / Remark) ──────────
    Not DB-sourced — the user picks/checks these in-line to triage results. */
-.cell-select {
+.cell-select,
+.cell-input {
   width: 100%;
   box-sizing: border-box;
   background: var(--surface-2);
@@ -898,8 +899,21 @@ th.grp {
   transition: border-color 0.15s;
 }
 .cell-select:focus,
-.cell-select:hover {
+.cell-select:hover,
+.cell-input:focus,
+.cell-input:hover {
   border-color: var(--a);
+}
+.cell-input {
+  cursor: text;
+  min-width: 140px;
+}
+.cell-input::placeholder {
+  color: var(--muted);
+}
+.cell-select:disabled,
+.cell-input:disabled {
+  cursor: not-allowed;
 }
 .cell-select option {
   background: var(--surface-2);

@@ -136,8 +136,8 @@ export async function apiMe(): Promise<AuthUser | null> {
   }
 }
 
-// ── Row annotations (Error From / Done) ──────────────────────────────────────
-// The backend speaks snake_case ({ error_from, done, saved_by, saved_at }); we
+// ── Row annotations (Error From / Done / Remark) ──────────────────────────────────────
+// The backend speaks snake_case ({ error_from, done, remark, saved_by, saved_at }); we
 // convert to/from the frontend RowAnnotation shape here so the rest of the app
 // only sees camelCase.
 function toAnnotations(raw: Record<string, any>): Record<string, RowAnnotation> {
@@ -146,6 +146,7 @@ function toAnnotations(raw: Record<string, any>): Record<string, RowAnnotation> 
     out[key] = {
       errorFrom: v.error_from || '',
       done: !!v.done,
+      remark: v.remark || '',
       savedBy: v.saved_by || '',
       savedAt: v.saved_at || '',
     };
@@ -166,13 +167,13 @@ export async function fetchAnnotations(): Promise<Record<string, RowAnnotation>>
 }
 
 // POST /annotations — save the current values (the Save button). Sends only
-// error_from/done; the backend stamps saved_by/saved_at. Returns the fresh set.
+// error_from/done/remark; the backend stamps saved_by/saved_at. Returns the fresh set.
 export async function saveAnnotations(
   items: Record<string, RowAnnotation>,
 ): Promise<Record<string, RowAnnotation>> {
-  const payload: Record<string, { error_from: string; done: boolean }> = {};
+  const payload: Record<string, { error_from: string; done: boolean; remark: string }> = {};
   for (const [key, v] of Object.entries(items)) {
-    payload[key] = { error_from: v.errorFrom || '', done: !!v.done };
+    payload[key] = { error_from: v.errorFrom || '', done: !!v.done, remark: v.remark || '' };
   }
   const res = await fetch(`${BACKEND_URL}/annotations`, {
     ...CREDS,

@@ -33,6 +33,9 @@ const VERDICT_TO_CATEGORY: Record<Verdict, FilterCategory> = {
   match: 'match', diff: 'diff', noKey: 'nokey', notCompared: 'notcompared',
 };
 
+// Defaults for a row that has no annotation yet (first edit fills the rest in).
+const EMPTY_ANNOTATION: RowAnnotation = { errorFrom: '', done: false, remark: '' };
+
 function AppInner() {
   const toast = useToast();
   const { user } = useAuth();
@@ -53,7 +56,7 @@ function AppInner() {
   // AFTER validating but BEFORE re-running.
   const [hadResultC, setHadResultC] = useState(false);
 
-  // ── User-filled annotations (Error From / Done), saved to the backend ───────
+  // ── User-filled annotations (Error From / Done / Remark), saved to the backend ───────
   // Keyed by CompRow.rowKey (a STABLE id), so the same value maps to the same
   // logical row for every user and survives re-validation. Loaded from the server
   // on Validate, written back by the Save button. `dirty` = unsaved local edits.
@@ -65,7 +68,7 @@ function AppInner() {
   const setErrorFrom = useCallback((rowKey: string, errorFrom: string) => {
     setAnnotations((prev) => ({
       ...prev,
-      [rowKey]: { ...prev[rowKey], errorFrom, done: prev[rowKey]?.done ?? false },
+      [rowKey]: { ...EMPTY_ANNOTATION, ...prev[rowKey], errorFrom },
     }));
     setDirty(true);
   }, []);
@@ -73,7 +76,15 @@ function AppInner() {
   const setDone = useCallback((rowKey: string, done: boolean) => {
     setAnnotations((prev) => ({
       ...prev,
-      [rowKey]: { ...prev[rowKey], done, errorFrom: prev[rowKey]?.errorFrom ?? '' },
+      [rowKey]: { ...EMPTY_ANNOTATION, ...prev[rowKey], done },
+    }));
+    setDirty(true);
+  }, []);
+
+  const setRemark = useCallback((rowKey: string, remark: string) => {
+    setAnnotations((prev) => ({
+      ...prev,
+      [rowKey]: { ...EMPTY_ANNOTATION, ...prev[rowKey], remark },
     }));
     setDirty(true);
   }, []);
@@ -395,6 +406,7 @@ function AppInner() {
             annotations={annotations}
             onErrorFromChange={setErrorFrom}
             onDoneChange={setDone}
+            onRemarkChange={setRemark}
             canEdit={canEdit}
           />
         </div>

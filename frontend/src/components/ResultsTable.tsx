@@ -26,7 +26,8 @@ interface Props {
   annotations: Record<string, RowAnnotation>;
   onErrorFromChange: (rowKey: string, value: string) => void;
   onDoneChange: (rowKey: string, done: boolean) => void;
-  canEdit: boolean;              // false → the Error From / Done inputs are disabled (read-only user)
+  onRemarkChange: (rowKey: string, remark: string) => void;
+  canEdit: boolean;              // false → the Error From / Done / Remark inputs are disabled (read-only user)
 }
 
 // Row-limit choices for the "Show first N" dropdown. Rendering cost scales
@@ -46,6 +47,44 @@ const MIN_COL_W = 40;
 // screen right after Validate. Users can still drag any column wider than this.
 const MAX_COL_W = 150;
 
+// Same cap the backend applies (annotations_db.REMARK_MAX_LEN).
+const REMARK_MAX_LEN = 500;
+
+// Free-text Remark input. Keeps the draft locally and only pushes it up on
+// blur / Enter, so typing doesn't re-render every row of the table per keystroke.
+// Escape reverts. `key` on the caller resets the draft when the saved value changes.
+function RemarkCell({
+  value,
+  canEdit,
+  onCommit,
+}: {
+  value: string;
+  canEdit: boolean;
+  onCommit: (v: string) => void;
+}) {
+  return (
+    <input
+      className="cell-input"
+      type="text"
+      defaultValue={value}
+      maxLength={REMARK_MAX_LEN}
+      placeholder={canEdit ? 'Add remark…' : ''}
+      disabled={!canEdit}
+      title={!canEdit ? 'Read-only — ask an admin for edit access' : value || undefined}
+      onBlur={(e) => {
+        if (e.currentTarget.value !== value) onCommit(e.currentTarget.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          e.currentTarget.value = value;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 // Same FOB equality the comparison uses: numeric with a tiny epsilon, else
 // case-insensitive string equality when either side isn't a number.
 function fobEq(a: string, b: string): boolean {
@@ -61,6 +100,7 @@ export default function ResultsTable({
   annotations,
   onErrorFromChange,
   onDoneChange,
+  onRemarkChange,
   canEdit,
 }: Props) {
   // How many rows to actually put in the DOM. User-adjustable via the dropdown
@@ -72,9 +112,9 @@ export default function ResultsTable({
   // The table first renders with auto layout; once a data row exists we measure
   // each column's natural width, lock them into a <colgroup> (table-layout:
   // fixed), and let the user drag the right edge of any header cell.
-  // +4 leaf columns before the sticky "ACS Match?" verdict: the user-filled
-  // "Error From" / "Done" pair, plus "Changed By" / "Changed On" attribution.
-  const colCount = hasC ? 26 : 20; // leaf columns, must match the header rows below
+  // +5 leaf columns before the sticky "ACS Match?" verdict: the user-filled
+  // "Error From" / "Done" / "Remark", plus "Changed By" / "Changed On" attribution.
+  const colCount = hasC ? 27 : 21; // leaf columns, must match the header rows below
   const tableRef = useRef<HTMLTableElement>(null);
   const [colWidths, setColWidths] = useState<number[] | null>(null);
   const dragRef = useRef<{ idx: number; startX: number; startW: number; lastW: number } | null>(
@@ -217,9 +257,10 @@ export default function ResultsTable({
               </>
             )}
             {/* User-filled columns + save attribution, just before the verdict.
-                Leaf indices: Error From colCount-5, Done -4, Changed By -3, Changed On -2. */}
-            <th className="hrow grp" rowSpan={2}>Error From{resizer(colCount - 5)}</th>
-            <th className="hrow" rowSpan={2}>Done{resizer(colCount - 4)}</th>
+                Leaf indices: Error From colCount-6, Done -5, Remark -4, Changed By -3, Changed On -2. */}
+            <th className="hrow grp" rowSpan={2}>Error From{resizer(colCount - 6)}</th>
+            <th className="hrow" rowSpan={2}>Done{resizer(colCount - 5)}</th>
+            <th className="hrow" rowSpan={2}>Remark{resizer(colCount - 4)}</th>
             <th className="hrow grp" rowSpan={2}>Changed By{resizer(colCount - 3)}</th>
             <th className="hrow" rowSpan={2}>Changed On{resizer(colCount - 2)}</th>
             {/* ACS Match? is sticky-right + spans both header rows */}
@@ -516,7 +557,7 @@ export default function ResultsTable({
                   </>
                 )}
                 {/* User-filled columns — NOT from any data source. "Error From"
-                    is a fixed dropdown; "Done" is a checkbox. Keyed by the stable
+                    is a fixed dropdown; "Done" is a checkbox; "Remark" is free text. Keyed by the stable
                     rowKey, saved to the backend, and included in the CSV export.
                     The Error From cell's tooltip shows who last saved it. */}
                 <td
@@ -551,6 +592,14 @@ export default function ResultsTable({
                     onChange={(e) => onDoneChange(row.rowKey, e.target.checked)}
                     disabled={!canEdit}
                     title={!canEdit ? 'Read-only — ask an admin for edit access' : undefined}
+                  />
+                </td>
+                <td>
+                  <RemarkCell
+                    key={`${row.rowKey}|${ann?.remark ?? ''}`}
+                    value={ann?.remark ?? ''}
+                    canEdit={canEdit}
+                    onCommit={(v) => onRemarkChange(row.rowKey, v)}
                   />
                 </td>
                 {/* Save attribution — who last changed this row and on what date.

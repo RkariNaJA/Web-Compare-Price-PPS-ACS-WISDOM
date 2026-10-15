@@ -126,7 +126,7 @@ def me():
     return jsonify({"user": user})
 
 
-# ── Row annotations (Error From / Done) ──────────────────────────────────────
+# ── Row annotations (Error From / Done / Remark) ──────────────────────────────────────
 # ONE shared version for now. Keyed by row_key on the client; see annotations_db.
 ANNOTATION_SCOPE = "shared"
 
@@ -134,15 +134,15 @@ ANNOTATION_SCOPE = "shared"
 @app.route("/annotations", methods=["GET"])
 @login_required
 def get_annotations():
-    """Load the saved Error From / Done values so the frontend can fill the table."""
+    """Load the saved Error From / Done / Remark values so the frontend can fill the table."""
     return jsonify({"annotations": annotations_db.get_all(ANNOTATION_SCOPE)})
 
 
 @app.route("/annotations", methods=["POST"])
 @require_edit
 def save_annotations():
-    """Save the current Error From / Done values (the Save button). Body:
-    { "annotations": { "<row_key>": { "error_from": "...", "done": true|false } } }.
+    """Save the current Error From / Done / Remark values (the Save button). Body:
+    { "annotations": { "<row_key>": { "error_from": "...", "done": true|false, "remark": "..." } } }.
     Returns the fresh full set (with saved_by / saved_at) so the UI can refresh."""
     data = request.get_json(silent=True) or {}
     items = data.get("annotations")

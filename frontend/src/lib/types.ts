@@ -84,12 +84,13 @@ export interface CompRow {
   dbColorsForKey?: string[];   // (noKeyMatch only) up to 6 colours seen in DB for this key
 }
 
-// User-typed annotations on a results row. These two columns are NOT sourced
+// User-typed annotations on a results row. These columns are NOT sourced
 // from any database — the user fills them in on-screen to triage results, and
 // they are kept in App state keyed by CompRow.rowIdx (see App.tsx).
 export interface RowAnnotation {
   errorFrom: string;   // "Error From" dropdown: '' (= "-", unassigned), Developer, Wisdom, or Customer
   done: boolean;       // the "Done" checkbox
+  remark: string;      // free-text "Remark" ('' = none); capped server-side
   savedBy?: string;    // who last saved this row (from the server; blank for unsaved local edits)
   savedAt?: string;    // ISO timestamp of that save
 }

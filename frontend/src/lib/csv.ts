@@ -36,7 +36,7 @@ function diffReason(r: CompRow, hasC: boolean): string {
 // Build the CSV in memory, drop a Blob URL into a temporary <a>, click it.
 // Exports ALL rows (compRows), NOT the currently-filtered table view — so
 // users always get the full dataset regardless of what filter is active.
-// `annotations` carries the user-typed Error From / Done values (keyed by
+// `annotations` carries the user-typed Error From / Done / Remark values (keyed by
 // rowIdx); it's optional so older callers still work.
 export function exportComparisonCSV(
   rows: CompRow[],
@@ -66,6 +66,7 @@ export function exportComparisonCSV(
     // sitting just before the Verdict.
     'Error_From',
     'Done',
+    'Remark',
     'Saved_By',
     'Verdict',
     'Diff_Reason',
@@ -90,6 +91,7 @@ export function exportComparisonCSV(
         ...(hasC ? [r.cFinalFobValue || '', r.cExtFobValue || '', r.cDateStr || ''] : []),
         ann?.errorFrom || '',
         ann?.done ? 'Yes' : '',
+        ann?.remark || '',
         ann?.savedBy || '',
         VERDICT_CSV[verdictOf(r)],
         diffReason(r, hasC),

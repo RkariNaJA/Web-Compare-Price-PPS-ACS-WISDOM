@@ -1,5 +1,5 @@
 """
-SQLite persistence for the user-filled row annotations (Error From / Done).
+SQLite persistence for the user-filled row annotations (Error From / Done / Remark).
 
 ONE SHARED VERSION for now: every logged-in user reads and writes the same
 `scope = "shared"` set, so what one person saves, the next person sees (see the
@@ -24,6 +24,9 @@ from datetime import datetime, timezone
 DB_PATH = os.getenv("VALIDATOR_DB_PATH") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "annotations.db"
 )
+
+# Free-text Remark is capped so one paste can't bloat the shared DB / change log.
+REMARK_MAX_LEN = 500
 
 
 def _connect():
@@ -54,23 +57,28 @@ def init_db():
                 row_key    TEXT NOT NULL,
                 error_from TEXT NOT NULL DEFAULT '',
                 done       INTEGER NOT NULL DEFAULT 0,
+                remark     TEXT NOT NULL DEFAULT '',
                 saved_by   TEXT NOT NULL DEFAULT '',
                 saved_at   TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (scope, row_key)
             )
             """
         )
+        # Migrate DBs created before the Remark column existed.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(annotations)")}
+        if "remark" not in cols:
+            conn.execute("ALTER TABLE annotations ADD COLUMN remark TEXT NOT NULL DEFAULT ''")
         conn.commit()
     finally:
         conn.close()
 
 
 def get_all(scope):
-    """Return { row_key: {error_from, done, saved_by, saved_at} } for a scope."""
+    """Return { row_key: {error_from, done, remark, saved_by, saved_at} } for a scope."""
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT row_key, error_from, done, saved_by, saved_at "
+            "SELECT row_key, error_from, done, remark, saved_by, saved_at "
             "FROM annotations WHERE scope = ?",
             (scope,),
         ).fetchall()
@@ -80,6 +88,7 @@ def get_all(scope):
         r["row_key"]: {
             "error_from": r["error_from"],
             "done": bool(r["done"]),
+            "remark": r["remark"],
             "saved_by": r["saved_by"],
             "saved_at": r["saved_at"],
         }
@@ -90,14 +99,16 @@ def get_all(scope):
 def save(scope, items, saved_by):
     """Upsert/delete annotations for a scope; return (fresh_full_set, changes).
 
-    `items` = { row_key: {error_from, done} }.
-      - A blank row (error_from empty AND done false) is DELETED — the user cleared it.
+    `items` = { row_key: {error_from, done, remark} }.
+      - A blank row (error_from empty AND done false AND remark empty) is DELETED.
+      - A missing "remark" key keeps the stored remark (older clients don't send it).
+      - remark is trimmed and capped at REMARK_MAX_LEN characters.
       - A changed value is stamped with saved_by / saved_at (now, UTC).
       - An unchanged value keeps its original attribution.
 
     `changes` is a list of {row_key, field, old_value, new_value} for every field
     that actually changed (including a row being cleared) — the audit trail. `field`
-    is 'Error From' or 'Done'; Done values are the strings 'true'/'false'; an
+    is 'Error From', 'Done' or 'Remark'; Done values are the strings 'true'/'false'; an
     unassigned Error From is ''.
     """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -112,8 +123,13 @@ def save(scope, items, saved_by):
             prev = existing.get(row_key)
             prev_error = prev["error_from"] if prev else ""
             prev_done = bool(prev["done"]) if prev else False
+            prev_remark = prev["remark"] if prev else ""
+            if "remark" in val:
+                remark = str(val.get("remark") or "").strip()[:REMARK_MAX_LEN]
+            else:
+                remark = prev_remark
 
-            if not error_from and not done:
+            if not error_from and not done and not remark:
                 # Row cleared → log the transition to empty for any field that had a value.
                 if prev is not None:
                     if prev_error != "":
@@ -122,6 +138,9 @@ def save(scope, items, saved_by):
                     if prev_done:
                         changes.append({"row_key": row_key, "field": "Done",
                                         "old_value": "true", "new_value": "false"})
+                    if prev_remark != "":
+                        changes.append({"row_key": row_key, "field": "Remark",
+                                        "old_value": prev_remark, "new_value": ""})
                 conn.execute(
                     "DELETE FROM annotations WHERE scope = ? AND row_key = ?",
                     (scope, row_key),
@@ -136,25 +155,30 @@ def save(scope, items, saved_by):
                 changes.append({"row_key": row_key, "field": "Done",
                                 "old_value": "true" if prev_done else "false",
                                 "new_value": "true" if new_done else "false"})
+            if prev_remark != remark:
+                changes.append({"row_key": row_key, "field": "Remark",
+                                "old_value": prev_remark, "new_value": remark})
 
             changed = (
                 prev is None
                 or prev["error_from"] != error_from
                 or (1 if prev["done"] else 0) != done
+                or prev_remark != remark
             )
             by, at = (saved_by, now) if changed else (prev["saved_by"], prev["saved_at"])
 
             conn.execute(
                 """
-                INSERT INTO annotations (scope, row_key, error_from, done, saved_by, saved_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO annotations (scope, row_key, error_from, done, remark, saved_by, saved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(scope, row_key) DO UPDATE SET
                     error_from = excluded.error_from,
                     done       = excluded.done,
+                    remark     = excluded.remark,
                     saved_by   = excluded.saved_by,
                     saved_at   = excluded.saved_at
                 """,
-                (scope, row_key, error_from, done, by, at),
+                (scope, row_key, error_from, done, remark, by, at),
             )
         conn.commit()
     finally:
