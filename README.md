@@ -41,8 +41,9 @@ This tool replaces that workflow.
   size specificity, expanding multi-colourway rows, and picking the newest costsheet entry.
 - **Gives every row a verdict** — Match, Diff (with a chip naming *which* source disagrees), or
   No Key Match, with diagnostics showing what ACS *does* have for related keys.
-- **Shared annotations** — an *Error From* dropdown and a *Done* checkbox per row, saved server-side,
-  so what one person marks the next person sees, stamped with who saved it.
+- **Shared annotations** — an *Error From* dropdown, a *Done* checkbox and a free-text *Remark* per
+  row, saved server-side, so what one person marks the next person sees, stamped with who saved it
+  (every change is also kept in the admin change log).
 - **Summary view** — a Match / Diff / No Key donut per factory plus a factory × season breakdown,
   never lumping factories together.
 - **CSV export** of the full comparison, annotations included.

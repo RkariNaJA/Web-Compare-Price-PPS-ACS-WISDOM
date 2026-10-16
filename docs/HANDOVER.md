@@ -2,7 +2,7 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-08-20 · **Original author / design contact:** BY PCK
+**Last updated:** 2026-10-15 · **Original author / design contact:** BY PCK
 
 [← Back to the project overview](../README.md)
 
@@ -260,7 +260,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 
 #### F. Persistence & access control — 2
 
-- **1 · Annotations save is also the audit trail** — `annotations_db.save()` upserts Error From / Done keyed by `(scope, rowKey)`, **deletes** a row the user blanked, keeps the original `saved_by` when nothing actually changed, and returns a per-field **old → new diff** that the save route writes to `change_log`. One shared `scope` today; per-group versions need no schema change. 🔐
+- **1 · Annotations save is also the audit trail** — `annotations_db.save()` upserts Error From / Done / Remark keyed by `(scope, rowKey)`, **deletes** a row the user blanked, keeps the original `saved_by` when nothing actually changed, and returns a per-field **old → new diff** that the save route writes to `change_log`. One shared `scope` today; per-group versions need no schema change. 🔐
 - **2 · Identity ≠ permission** — AD proves _who you are_ (an LDAP bind; no password is ever stored or compared), `AD_ALLOWED_GROUPS` decides _whether you may log in_, and the app's **own** groups decide what you may do: `resolve_perms()` unions `can_edit` / `can_manage` most-permissively across your groups, `INITIAL_ADMINS` is always full admin, and **no group = read-only**. Permissions are resolved **at login** and enforced server-side (`@login_required` / `@require_edit` / `@require_manage`) — hiding a button is cosmetic. 🔐
 
 ### Landmines — every one of these has actually bitten
@@ -526,13 +526,13 @@ add people yourself, in the dashboard.
 
 Each group carries two switches:
 
-- **`can_edit`** — members may **save** the Error From / Done annotations.
+- **`can_edit`** — members may **save** the Error From / Done / Remark annotations.
 - **`can_manage`** — members may **administer groups** (create groups, add/remove members,
   change permissions).
 
 **The rules:**
 
-- A logged-in user in **no** group → **read-only** (can view; the Error From / Done cells and the Save button are disabled).
+- A logged-in user in **no** group → **read-only** (can view; the Error From / Done / Remark cells and the Save button are disabled).
 - Membership is by AD `sAMAccountName`; a user in several groups gets the **combined,
   most-permissive** rights.
 - **`INITIAL_ADMINS`** (in `.env`, currently `your-admin-username`) is always full admin — this
@@ -575,7 +575,7 @@ The **Log** view has three read-only panels:
   whether it was AD or the local account. Shown for the selected **week** (Sunday–Saturday,
   defaults to the current week; use ◀ / ▶ to look back), newest first.
 - **Changes — the full audit trail of edits.** Every Save records one row **per field that
-  actually changed** in the Error From / Done columns: who · when · which row · which field ·
+  actually changed** in the Error From / Done / Remark columns: who · when · which row · which field ·
   **old value → new value** (clearing a row is logged too). Unlike the annotations themselves —
   which only remember the _latest_ editor — this keeps **every** change, so you get the whole
   history, not just the current state. Also scoped to the selected **week** (defaults to the
@@ -720,7 +720,7 @@ Deeper write-ups: backend internals → [§4.0](#40-backend-files-infrastructure
 | `sql_backend.py`       | **The Flask app — every HTTP route.** Auth, data endpoints, annotations, groups, admin logs. Session/CORS config, the three access guards, and the SQL Server connection helper. This is the file you run in dev. |
 | `serve.py`             | **Production entry point.** Imports `app` from `sql_backend` and serves it under waitress. Use this on a server, not `python sql_backend.py`. Host/port/threads come from `SERVE_*` env vars.                     |
 | `auth_ad.py`           | **Password check only** — no Flask, no DB. Local dev account → Active Directory bind → `AD_ALLOWED_GROUPS` policy. Returns a plain user dict.                                                                     |
-| `annotations_db.py`    | SQLite store for the **Error From / Done** columns. `save()` upserts and also returns the change diffs the audit log records.                                                                                     |
+| `annotations_db.py`    | SQLite store for the **Error From / Done / Remark** columns. `save()` upserts and also returns the change diffs the audit log records.                                                                            |
 | `groups_db.py`         | SQLite store for the **app's own groups & permissions**. `resolve_perms(username)` runs at login (most-permissive wins; no group = read-only).                                                                    |
 | `logs_db.py`           | SQLite store for the **admin Log page** — presence, login events, change history. Append-only, UTC timestamps, Sunday–Saturday weeks.                                                                             |
 | `mer_team.py`          | **Team Mer master** — reads `Data/Master_MerDevTeam.xlsx` (`MER_TEAM`, `MER_DEV`; path override `MER_TEAM_MASTER_PATH`), caches by file mtime, serves `GET /get_mer_team_master`. The `.xlsx` is gitignored: **copy it to the server's `Data/` folder by hand.** |
@@ -765,7 +765,8 @@ Run: `python -m pytest tests/ -v`
 | `main.tsx`                         | ReactDOM mount. You will almost never touch it.                                                                                          |
 | `App.tsx`                          | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
 | `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
-| `components/UploadStrip.tsx`       | The centred **Set up a validation** card: one row per source (ACS · Costsheet · PPS), the **Validate** button, and the collapsed matching reference. |
+| `components/UploadStrip.tsx`       | The centred **Set up a validation** card: one source card each (ACS · Costsheet · PPS), animated connector lines into the hub with the **Validate** button, and the collapsed matching reference. |
+| `components/DbIcon.tsx`            | Small database icon on the source cards' headers.                                                                                        |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
 | `components/FileSlotPPS.tsx`       | Factory picker — fetches `dbo.PPS` one `FTYCODE` at a time, column strip-down, size normalisation.                                        |
 | `components/FileSlotCostsheet.tsx` | Loads the Costsheet/WISDOM view.                                                                                                         |
@@ -993,7 +994,7 @@ DashBoard/                       ← Flask backend · dev: python sql_backend.py
 ├── sql_backend.py          Flask app (:5001) · all routes · guards · session/CORS · SQL Server conn
 ├── serve.py                production entry point — runs `app` under waitress (use this on a server)
 ├── auth_ad.py              credential check: local → AD (LDAP/StartTLS) → AD_ALLOWED_GROUPS policy
-├── annotations_db.py       SQLite: Error From / Done values; save() also returns the change diffs
+├── annotations_db.py       SQLite: Error From / Done / Remark values; save() also returns the change diffs
 ├── groups_db.py            SQLite: app groups & permissions; resolve_perms() at login
 ├── logs_db.py              SQLite: admin Log page — presence / login_events / change_log
 ├── annotations.db          the ONE SQLite file the *_db.py modules share (WAL) · backup = copy it
@@ -1016,7 +1017,7 @@ DashBoard/                       ← Flask backend · dev: python sql_backend.py
 
 - **`auth_ad.py`** — The **credential check only** — no Flask, no database. `authenticate(username, password)` first tries the local dev account (if `LOCAL_AUTH_ENABLED`), then binds to Active Directory over LDAP/StartTLS, where AD itself verifies the password (bind as `user@domain` in `SIMPLE` mode or `DOMAIN\user` in `NTLM` mode). On success it locates the account with `AD_USER_FILTER`, reads the person's profile (name, email) and their `memberOf` groups, and applies the `AD_ALLOWED_GROUPS` policy that decides **who may log in at all** (a bare CN or a full DN both match; empty = everyone). It returns a plain dict `{username, display_name, email, groups, source}` (`source` = `ad` or `local`) and never touches sessions or app permissions (those belong to `sql_backend` + `groups_db`). Ported from the team's Django auth backend; `ldap3` is imported lazily so the module loads even where the AD stack isn't installed.
 
-- **`annotations_db.py`** — SQLite storage for the two user-filled columns, **Error From** and **Done** — the `annotations(scope, row_key, error_from, done, saved_by, saved_at)` table, PK `(scope, row_key)`. `scope` is always `"shared"` today (one set everyone sees; it exists so per-group sets could be added later with no migration), and `row_key` is the row's stable business identity (`FTYCODE|Season|Style|Color|ORIG_SIZE|LOCAL_QUOTE_AMOUNT`). `get_all()` reads them; `save()` upserts changed values, **deletes** cleared (blank) rows, stamps `saved_by`/`saved_at` only on a real change (last-write-wins — the value itself keeps no history), and — since the Log feature — also **returns the list of field-level changes** (`Error From` / `Done`, old → new, clears included) that `sql_backend` writes to the audit log. Runs in WAL mode with a 5-second busy-timeout so simultaneous saves just queue. This is what makes one person's save visible to everyone else.
+- **`annotations_db.py`** — SQLite storage for the three user-filled columns, **Error From**, **Done** and **Remark** — the `annotations(scope, row_key, error_from, done, remark, saved_by, saved_at)` table, PK `(scope, row_key)`. `scope` is always `"shared"` today (one set everyone sees; it exists so per-group sets could be added later with no migration), and `row_key` is the row's stable business identity (`FTYCODE|Season|Style|Color|ORIG_SIZE|LOCAL_QUOTE_AMOUNT`). `get_all()` reads them; `save()` upserts changed values, **deletes** cleared (blank) rows, stamps `saved_by`/`saved_at` only on a real change (last-write-wins — the value itself keeps no history), and — since the Log feature — also **returns the list of field-level changes** (`Error From` / `Done` / `Remark`, old → new, clears included) that `sql_backend` writes to the audit log. Runs in WAL mode with a 5-second busy-timeout so simultaneous saves just queue. This is what makes one person's save visible to everyone else.
 
 - **`groups_db.py`** — SQLite storage for the app's **own groups & permissions** (the `groups(name, can_edit, can_manage, …)` and `group_members(group_name, username, …)` tables). Admins create groups here and drop AD usernames into them (stored **casefolded**, so matching is case-insensitive); each group carries `can_edit` / `can_manage`. It exposes the full CRUD (`create_group`, `list_groups`, `set_group_perms`, `delete_group`, `add_member`, `remove_member`), but the key function is `resolve_perms(username)`, called at login to compute effective rights — **most-permissive** across all the user's groups, `INITIAL_ADMINS` (from `.env`) always full admin, **no group = read-only**. Because perms are read at login, a group change takes effect on the user's **next** login. These are the _app's_ groups, deliberately separate from AD security groups.
 
@@ -1028,7 +1029,7 @@ DashBoard/                       ← Flask backend · dev: python sql_backend.py
 
 - **`.env`** — All configuration and secrets in one gitignored file, loaded once at startup (`load_dotenv()`): AD settings (`AD_ENABLED`, server/domain/base-DN, `AD_START_TLS`, `AD_AUTH_MODE`, `AD_USER_FILTER`, `AD_ALLOWED_GROUPS`), the local dev account, `FLASK_SECRET_KEY` (signs the session cookie — must be a **strong** secret), `INITIAL_ADMINS`, `SESSION_LIFETIME_DAYS`, `COOKIE_SECURE`, and `CORS_ALLOWED_ORIGINS`. **Never commit it.** (The Authentication section's config table lists every key.)
 
-- **`tests/`** — The pytest suite (`python -m pytest tests/ -v`, **51 tests**). `conftest.py` supplies fixtures that point every test at an **isolated temporary database** (via `VALIDATOR_DB_PATH` + monkeypatch, so real data is never touched), plus a Flask **test client** and a `login_as()` helper that injects a session to bypass AD. The five `test_*.py` files cover the annotation save + change-diff logic, the groups CRUD + `resolve_perms` rules, the log storage, the HTTP routes' access guards (401 vs 403 vs 200) end-to-end, and `ColorwayCode` row expansion.
+- **`tests/`** — The pytest suite (`python -m pytest tests/ -v`, **71 tests**). `conftest.py` supplies fixtures that point every test at an **isolated temporary database** (via `VALIDATOR_DB_PATH` + monkeypatch, so real data is never touched), plus a Flask **test client** and a `login_as()` helper that injects a session to bypass AD. The five `test_*.py` files cover the annotation save + change-diff logic, the groups CRUD + `resolve_perms` rules, the log storage, the HTTP routes' access guards (401 vs 403 vs 200) end-to-end, and `ColorwayCode` row expansion.
 
 **How a request flows:** the browser calls `sql_backend.py` → a guard checks the session → the view
 reads/writes either SQL Server (data endpoints) or one of the SQLite tables (annotations / groups /
@@ -1046,7 +1047,7 @@ logs) → JSON comes back. `auth_ad.py` is only touched at `/login`.
 | GET    | `/get_pps_factories`                | ✓      | `{ factories }` — distinct `FTYCODE`                                              |
 | GET    | `/get_pps_data`                     | ✓      | `{ name, headers, rows }` for one factory                                         |
 | GET    | `/get_costsheet_data`               | ✓      | `{ name, headers, rows }` from Costsheet view                                     |
-| GET    | `/annotations`                      | ✓      | `{ annotations }` — saved Error From / Done                                       |
+| GET    | `/annotations`                      | ✓      | `{ annotations }` — saved Error From / Done / Remark                              |
 | POST   | `/annotations`                      | edit   | Save annotations; fresh `{ annotations }` (403 if not an editor)                  |
 | GET    | `/groups`                           | manage | `{ groups }` — all groups + members + perm flags                                  |
 | POST   | `/groups`                           | manage | Create a group `{name, can_edit, can_manage}` (400 blank · 409 dup)               |
@@ -1120,9 +1121,10 @@ Auth is Windows integrated (`Trusted_Connection=yes`), so the user running Flask
 
 ### 4.5 Row annotations store (`annotations.db`)
 
-The user-filled **Error From** / **Done** columns are NOT from any source DB — they're saved to a small **SQLite** file, `DashBoard/annotations.db`, managed by `annotations_db.py` (created on startup by `init_db()`, gitignored). This is what makes a save by one user visible to the next.
+The user-filled **Error From** / **Done** / **Remark** columns are NOT from any source DB — they're saved to a small **SQLite** file, `DashBoard/annotations.db`, managed by `annotations_db.py` (created on startup by `init_db()`, gitignored). This is what makes a save by one user visible to the next.
 
-- **Table:** `annotations(scope, row_key, error_from, done, saved_by, saved_at)`, PK `(scope, row_key)`.
+- **Table:** `annotations(scope, row_key, error_from, done, remark, saved_by, saved_at)`, PK `(scope, row_key)`.
+- **Schema migration:** `remark` was added 2026-10-15. `init_db()` checks `PRAGMA table_info` and runs `ALTER TABLE … ADD COLUMN remark` on an older `annotations.db`, so existing data is kept — just restart the backend. Add any future column the same way (`CREATE TABLE IF NOT EXISTS` never alters an existing table).
 - **Also in this file:** the app-managed permission tables `groups` / `group_members` (via `groups_db.py`, 2026-07-20) and the admin Log page tables `presence` / `login_events` / `change_log` (via `logs_db.py`, 2026-07-21) — same SQLite file, same WAL setup. See the Authentication section's "Per-group roles" and "Admin Log page".
 
 **The two key columns, in plain terms:**
@@ -1131,7 +1133,7 @@ The user-filled **Error From** / **Done** columns are NOT from any source DB —
 - **`row_key`** = _which validation row_ the value is attached to — a stable ID built from the row's data (see §6.8): `FTYCODE|Season|Style|Color|ORIG_SIZE|LOCAL_QUOTE_AMOUNT` (e.g. `hit|ho26|fv8505|all_solid|3xl|2.8`). Used instead of the `#` row number because `#` is reassigned on every Validate — the data-based key stays the same, so a saved value re-attaches to the right row for everyone, every time.
 - **Together, `(scope, row_key)`** is the primary key: one saved value per version, per row — so a Save overwrites in place instead of piling up duplicates.
 
-- **Save semantics:** a blank row (no Error From, not Done) is **deleted**; a changed value stamps `saved_by`/`saved_at` (current user / now, UTC); an unchanged value keeps its original attribution (so "who changed it" stays accurate even when someone else clicks Save). **Last write wins** — no version history is kept.
+- **Save semantics:** a blank row (no Error From, not Done, no Remark) is **deleted**; `remark` is trimmed and capped at `REMARK_MAX_LEN` (500) characters; a request **without** a `remark` key keeps the stored remark (so a stale cached frontend can't wipe remarks); a changed value stamps `saved_by`/`saved_at` (current user / now, UTC); an unchanged value keeps its original attribution (so "who changed it" stays accurate even when someone else clicks Save). **Last write wins** — no version history is kept.
 - **Backup** = copy the one `.db` file.
 - **Concurrency:** the DB opens in **WAL mode** (readers and the single writer don't block each other) with a **5-second busy-timeout** (a save that hits a brief lock waits a few ms and proceeds — no error, no corruption; SQLite is ACID). This comfortably handles dozens of simultaneous users: each Save is a few tiny upserts committing in milliseconds, and SQLite serialises writes, so "same time, different records" just queues instantly. You'd only outgrow this at hundreds of concurrent heavy writers or multiple app servers — then move annotations into SQL Server. WAL adds `-wal` / `-shm` sidecar files next to the `.db` (also gitignored).
 
@@ -1377,7 +1379,7 @@ const acsMatch = hasCData
 Function: `exportComparisonCSV(rows, hasC, annotations)` in `csv.ts`.
 
 - Exports **all** `compRows` — the on-screen filter does **not** affect the CSV.
-- Columns: `Row, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, LOCAL_QUOTE_AMOUNT, [Costsheet_Final_FOB, Costsheet_Ext_Size_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Saved_By, Verdict, Diff_Reason`.
+- Columns: `Row, Team_Mer, Created_CBD_By, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, LOCAL_QUOTE_AMOUNT, LOCAL_CURRENCY, [Costsheet_Final_FOB, Costsheet_Ext_Size_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Remark, Saved_By, Verdict, Diff_Reason`.
 - `Costsheet_Final_FOB` / `Costsheet_Ext_Size_FOB` are the two raw cells, matching the on-screen columns. (Before 2026-09-25 `Costsheet_Final_FOB` held the size-picked value, which for extended sizes was really `Extended Size FOB`.)
 - `Verdict` is `MATCH` / `DIFF` / `NO_KEY_MATCH` — matches the on-screen badge exactly.
 - `Diff_Reason` is populated only for `DIFF` rows, pipe-delimited (e.g. `PPS!=ACS|No_WISDOM`).
@@ -1408,11 +1410,17 @@ Because it's derived from the row's data (not the ephemeral `#` counter), the sa
 The Compare page has **two states** (`App.tsx`, `editingData` + `validatedWith`):
 
 1. **Setup** — before the first Validate, or after **Change data**. A centred card titled
-   "Set up a validation": one row per source (label · Load button or "✓ N rows" + source
-   name · ✕ to clear), then a hint ("Load ACS and at least one PPS factory." / "Ready —
-   3-way check…" / "Ready — 2-way check…") and the **Validate** button. When results already
-   exist, a **Back to results** button returns to them without re-validating. The collapsed
-   **How matching works** reference sits at the bottom of the card (§7.2).
+   "Set up a validation", laid out as a **data flow**: three **source cards** side by side
+   (ACS · Costsheet · PPS — database icon, colour stripe, a Required/Optional tag that becomes
+   ✕ to clear once loaded, then the Load button or "✓ N rows" + source name). Under the cards
+   an SVG draws one **connector line per source** merging into the **hub** below — grey and
+   dotted while that source is empty, source-coloured with **flowing dashes** once loaded
+   (static under `prefers-reduced-motion`). The hub holds the hint ("Load ACS and at least one
+   PPS factory." / "Ready — 3-way check…" / "Ready — 2-way check…") and the **Validate**
+   button; it turns solid green once Validate is possible. When results already exist, a
+   **Back to results** button in the hub returns to them without re-validating. At ≤ 640px
+   the cards stack, each with a short animated connector running straight down. The
+   collapsed **How matching works** reference sits at the bottom of the card (§7.2).
 2. **Results** — after a successful Validate the card disappears and a row of **result
    cards** (`DataSummaryBar`) sits above the toolbar, one per source:
    - **PPS** — rows compared, and rows per factory.
@@ -1429,13 +1437,14 @@ The Compare page has **two states** (`App.tsx`, `editingData` + `validatedWith`)
    with the data currently loaded (it does not re-fetch from the DB — clear and reload a
    source for that).
 
-_(Redesigned 2026-10-07. History: a 3-column upload strip with "&" / "VS" separators and the
-Validate button in the key panel → a one-row "Load data" bar → this two-state flow. The
+_(Redesigned 2026-10-07; setup card reworked into the source-cards → hub flow 2026-10-16.
+History: a 3-column upload strip with "&" / "VS" separators and the Validate button in the
+key panel → a one-row "Load data" bar → one row per source → this flow layout. The
 5-row preview tables were removed the same day — they showed too little to judge a load.
 Missing columns still surface as toasts or a Validate error.)_ Disabled buttons render
 faded with a not-allowed cursor.
 
-- **ACS & Costsheet** — single button → backend fetch → "✓ N rows" in the row (✕ clears it).
+- **ACS & Costsheet** — single button → backend fetch → "✓ N rows" in the card (✕ clears it).
 - **PPS** — a **factory picker**, not a file drop. The `FTYCODE` list loads from the DB on mount (with a **Retry** if that fetch fails); tick the factories you want and click **Load PPS**. Accepts up to `MAX_B_FILES` (4) factories; already-loaded ones are skipped rather than reloaded. Each loaded factory gets a distinct badge colour from `FILE_COLORS` and a compact pill (✕ removes it) under the checkboxes.
 
 ### 7.2 How matching works (Key Info Panel)
@@ -1449,14 +1458,15 @@ no buttons. It is not shown in the results state — open **Change data** to rea
 Column layout when Costsheet is loaded (`hasC = true`):
 
 ```
-# | MSC_CODE | RESPONSIBLE_DEVELOPER | Key Columns (Season/Size/Style/Color/Factory) |
+# | Master Data (Team Mer / Created CBD by) | MSC_CODE | RESPONSIBLE_DEVELOPER |
+Key Columns (Season/Size/Style/Color/Factory) |
 Size Comparison (PPS SIZE / ACS CBDID SIZE / WISDOM SIZE) |
 FOB Source | PPS FOB | ACS FOB | WISDOM FINAL FOB | WISDOM EXT SIZE FOB |
 Version | Cost Sheet No | Max Input Date |
-Error From | Done | Changed By | Changed On | ACS Match? (sticky right)
+Error From | Done | Remark | Changed By | Changed On | ACS Match? (sticky right)
 ```
 
-When `hasC = false`, the WISDOM SIZE / both WISDOM FOB / Version / Cost Sheet No / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2. Leaf column count: **24** with Costsheet, **18** without (`colCount` in `ResultsTable.tsx`, which must match the header rows, since the resizer indices and the measured `<colgroup>` depend on it).
+When `hasC = false`, the WISDOM SIZE / both WISDOM FOB / Version / Cost Sheet No / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2. Leaf column count: **27** with Costsheet, **21** without (`colCount` in `ResultsTable.tsx`, which must match the header rows, since the resizer indices and the measured `<colgroup>` depend on it).
 
 **WISDOM FOB colours** (`wFobCls` in `ResultsTable.tsx`, applied to both WISDOM FOB cells independently):
 
@@ -1490,19 +1500,20 @@ The **✕ Clear Filters** button (next to Export CSV) resets everything at once 
 
 Toolbar counts (`Match`, `Diff`, `No Key`, `Showing`) all reflect the _filtered_ rows.
 
-### 7.5 Error From / Done columns + Save
+### 7.5 Error From / Done / Remark columns + Save
 
-Two user-filled columns sit just before the sticky **ACS Match?** verdict:
+Three user-filled columns sit just before the sticky **ACS Match?** verdict:
 
 - **Error From** — a fixed dropdown (`-` / Developer / Wisdom / Customer); all options stay visible so it's easy to re-select.
 - **Done** — a checkbox.
+- **Remark** — free text (max 500 characters). Committed to the table when the user presses **Enter** or clicks away (**Esc** undoes the typing); then saved with the same **Save** button. Hover shows the full text. _Added 2026-10-15._ The input is uncontrolled (`RemarkCell` in `ResultsTable.tsx`) on purpose: a controlled input would re-render every visible row (up to 5,000) per keystroke.
 
 These are **not** from any source data (see §4.5 / §6.8), and they're **shared** — what one user saves, the next user sees.
 
 - The **Save** button (toolbar, next to Export CSV) writes the values to the backend; a **"● Unsaved"** flag appears whenever there are unsaved edits.
 - On **Validate**, saved values are loaded from the server and mapped onto the rows. ⚠️ This **overwrites unsaved local edits** — Save before re-validating.
 - Hover the Error From cell to see **who last saved it** (`saved_by` · date); it's also exported as the `Saved_By` CSV column.
-- **Roles are enforced:** for read-only users (no `can_edit`), the **Error From dropdown and Done checkbox are disabled** _and_ the **Save button is disabled** (both with a "Read-only — ask an admin for edit access" tooltip) — so they can't even make a local edit; `POST /annotations` also returns **403**, so it can't be bypassed via the API. Who can edit is set per app-group — see the Authentication section's "Per-group roles".
+- **Roles are enforced:** for read-only users (no `can_edit`), the **Error From dropdown, Done checkbox and Remark input are disabled** _and_ the **Save button is disabled** (both with a "Read-only — ask an admin for edit access" tooltip) — so they can't even make a local edit; `POST /annotations` also returns **403**, so it can't be bypassed via the API. Who can edit is set per app-group — see the Authentication section's "Per-group roles".
   - _History: Save gating + the 403 shipped 2026-07-20; the Error From / Done **input cells** were also disabled for read-only users on 2026-07-21 (previously they were editable-but-unsavable)._
 
 ### 7.6 Validation Summary tab
