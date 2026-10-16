@@ -10,6 +10,9 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/tokens.css';   // CSS variables (palette, spacing, type)
 import './styles/global.css';   // component classes (.header, .file-slot, .result table, …)
+import { applyInitialTheme } from './hooks/useTheme';
+
+applyInitialTheme();             // set light/dark before the first render (no flash)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

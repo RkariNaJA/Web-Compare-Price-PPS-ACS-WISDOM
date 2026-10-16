@@ -764,7 +764,7 @@ Run: `python -m pytest tests/ -v`
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.tsx`                         | ReactDOM mount. You will almost never touch it.                                                                                          |
 | `App.tsx`                          | **Root component and the owner of all state** (see [§5.3](#53-state-model)). Wires everything together; Validate is triggered from here. |
-| `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin and Logout buttons. |
+| `components/Header.tsx`            | Top bar — switches between the three views (**Compare / Summary / Log**, Log is manager-only), plus the Groups-admin, **Light/Dark** switch and Logout buttons. |
 | `components/UploadStrip.tsx`       | The centred **Set up a validation** card: one source card each (ACS · Costsheet · PPS), animated connector lines into the hub with the **Validate** button, and the collapsed matching reference. |
 | `components/DbIcon.tsx`            | Small database icon on the source cards' headers.                                                                                        |
 | `components/FileSlotACS.tsx`       | Loads `dbo.ACS` from the backend.                                                                                                        |
@@ -780,6 +780,7 @@ Run: `python -m pytest tests/ -v`
 | `hooks/useAuth.tsx`                | Auth context — login/logout, calls `/me` on load.                                                                                        |
 | `hooks/useToast.tsx`               | Toast context + provider.                                                                                                                |
 | `hooks/usePresenceHeartbeat.tsx`   | Pings `/ping` every 30s while logged in — feeds the "online now" list.                                                                   |
+| `hooks/useTheme.tsx`               | Light/Dark switch — sets `data-theme` on `<html>`, remembers the pick in `localStorage` (default: OS setting); applied in `main.tsx` before first render. |
 | `styles/tokens.css`                | CSS variables — palette, type scale, spacing. Change the theme here.                                                                     |
 | `styles/global.css`                | Component classes.                                                                                                                       |
 
@@ -1161,7 +1162,7 @@ No Redux, no React Query, no fetching library. State lives in `App.tsx`'s `useSt
 > suggested reading order at the end of §0.4. Not repeated here.
 
 The shape in one line: `lib/` is pure domain logic with **zero React**, `components/` is presentation,
-`hooks/` holds the three contexts (auth, toast, presence heartbeat), and `App.tsx` owns all state.
+`hooks/` holds the three contexts (auth, toast, presence heartbeat) plus the theme switch (`useTheme`), and `App.tsx` owns all state.
 
 ### 5.3 State Model
 

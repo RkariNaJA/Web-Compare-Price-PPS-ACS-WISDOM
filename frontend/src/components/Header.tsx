@@ -1,4 +1,5 @@
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
 import type { AppView } from '../lib/types';
 
 interface HeaderProps {
@@ -9,6 +10,8 @@ interface HeaderProps {
 
 export default function Header({ onOpenGroups, view, onSetView }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
+  const toDark = theme === 'light';
   return (
     <header className="header">
       <div className="logo">⊞</div>
@@ -50,6 +53,14 @@ export default function Header({ onOpenGroups, view, onSetView }: HeaderProps) {
               Groups
             </button>
           )}
+          <button
+            className="btn btn-ghost"
+            onClick={toggle}
+            title={toDark ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-label={toDark ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {toDark ? '☾ Dark' : '☀ Light'}
+          </button>
           <span className="header-username" title={user.email || user.username}>
             {user.display_name || user.username}
           </span>
