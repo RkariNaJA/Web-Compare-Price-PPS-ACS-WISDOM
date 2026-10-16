@@ -2,12 +2,13 @@
  * Validation Summary view (public to all logged-in users; reached from the header
  * switcher). Summarizes the CURRENT validation into ONE Match / Diff / No Key **donut
  * per factory** (small multiples — factories are shown separately, never lumped
- * together), plus a Factory × Season **breakdown table** with the exact numbers. Pure
+ * together) — click a donut to drop down that factory's per-season numbers — plus a
+ * **Factory totals** table with the exact numbers (one row per factory). Pure
  * presentation over lib/summary.ts; styling follows the corporate orange/white design system (tokens.css).
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CompRow } from '../lib/types';
-import { summarize, type GroupCount } from '../lib/summary';
+import { summarize, type FactorySeasonRow, type GroupCount } from '../lib/summary';
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0);
 
@@ -26,9 +27,32 @@ const donutStyle = (g: GroupCount) => {
   };
 };
 
-function FactoryDonut({ g }: { g: GroupCount }) {
+// Clickable: selecting a card opens that factory's season breakdown under the grid.
+// A <div role="button"> rather than <button>, since the card holds an <h3> and a <ul>.
+function FactoryDonut({
+  g,
+  selected,
+  onSelect,
+}: {
+  g: GroupCount;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <div className="summary-factory-card">
+    <div
+      className={`summary-factory-card clickable${selected ? ' selected' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      title={selected ? `Hide ${g.key} by season` : `Show ${g.key} by season`}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <h3 className="summary-factory-name" title={g.key}>
         {g.key}
       </h3>
@@ -80,8 +104,82 @@ function FactoryDonut({ g }: { g: GroupCount }) {
   );
 }
 
+// Drop-down under the donut grid: the selected factory's numbers per season + its total.
+function FactoryDetail({
+  g,
+  seasons,
+  onClose,
+}: {
+  g: GroupCount;
+  seasons: FactorySeasonRow[];
+  onClose: () => void;
+}) {
+  return (
+    <section className="summary-card summary-detail">
+      <div className="summary-detail-head">
+        <h2>
+          ▼ {g.key} — by season
+        </h2>
+        <button className="source-clear" onClick={onClose} title="Close">
+          ✕
+        </button>
+      </div>
+      <div className="log-table-wrap">
+        <table className="log-table">
+          <thead>
+            <tr>
+              <th>Season</th>
+              <th>Match</th>
+              <th>Diff</th>
+              <th>No Key</th>
+              <th>Not Compared</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {seasons.map((r) => (
+              <tr key={r.season}>
+                <td>{r.season}</td>
+                <td className="summary-num match">{r.match}</td>
+                <td className="summary-num diff">{r.diff}</td>
+                <td className="summary-num nokey">{r.noKey}</td>
+                <td className="summary-num notcompared">{r.notCompared}</td>
+                <td className="summary-num">{r.total}</td>
+              </tr>
+            ))}
+            <tr>
+              <td>
+                <strong>Total</strong>
+              </td>
+              <td className="summary-num match">
+                <strong>{g.match}</strong>
+              </td>
+              <td className="summary-num diff">
+                <strong>{g.diff}</strong>
+              </td>
+              <td className="summary-num nokey">
+                <strong>{g.noKey}</strong>
+              </td>
+              <td className="summary-num notcompared">
+                <strong>{g.notCompared}</strong>
+              </td>
+              <td className="summary-num">
+                <strong>{g.total}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
   const s = useMemo(() => summarize(rows), [rows]);
+  // Factory whose chart was clicked (null = none open). If a new run no longer has
+  // that factory, the lookup below finds nothing and the drop-down simply stays shut.
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedGroup = s.byFactory.find((f) => f.key === selected);
 
   if (rows.length === 0) {
     return (
@@ -103,19 +201,33 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
         {/* One donut per factory — shown separately, never combined */}
         <div className="summary-donut-grid">
           {s.byFactory.map((f) => (
-            <FactoryDonut key={f.key} g={f} />
+            <FactoryDonut
+              key={f.key}
+              g={f}
+              selected={f.key === selected}
+              onSelect={() => setSelected((cur) => (cur === f.key ? null : f.key))}
+            />
           ))}
         </div>
 
-        {/* Factory × Season breakdown (exact numbers, + overall Totals row) */}
+        {selectedGroup && (
+          <FactoryDetail
+            key={selectedGroup.key}
+            g={selectedGroup}
+            seasons={s.byFactorySeason.filter((r) => r.factory === selectedGroup.key)}
+            onClose={() => setSelected(null)}
+          />
+        )}
+
+        {/* Factory totals (one row per factory, + overall Total). Per-season numbers
+            open from each factory's chart above. */}
         <section className="summary-card">
-          <h2>Factory × Season breakdown</h2>
+          <h2>Factory totals</h2>
           <div className="log-table-wrap">
             <table className="log-table">
               <thead>
                 <tr>
                   <th>Factory</th>
-                  <th>Season</th>
                   <th>Match</th>
                   <th>Diff</th>
                   <th>No Key</th>
@@ -124,10 +236,9 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
                 </tr>
               </thead>
               <tbody>
-                {s.byFactorySeason.map((r) => (
-                  <tr key={`${r.factory}|${r.season}`}>
-                    <td>{r.factory}</td>
-                    <td>{r.season}</td>
+                {s.byFactory.map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.key}</td>
                     <td className="summary-num match">{r.match}</td>
                     <td className="summary-num diff">{r.diff}</td>
                     <td className="summary-num nokey">{r.noKey}</td>
@@ -139,7 +250,6 @@ export default function SummaryDashboard({ rows }: { rows: CompRow[] }) {
                   <td>
                     <strong>Total</strong>
                   </td>
-                  <td />
                   <td className="summary-num match">
                     <strong>{match}</strong>
                   </td>

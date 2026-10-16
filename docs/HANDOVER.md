@@ -1528,9 +1528,12 @@ Top to bottom:
 
 - **A donut per factory** — one Match / Diff / No Key donut for **each factory** you loaded (its
   total in the center + a legend with counts + %), shown side by side so factories are **never
-  lumped together**. Pick a single factory → a single donut.
-- **Factory × Season breakdown** — a table with the exact Match / Diff / No Key / Total per
-  factory+season, plus a Totals row.
+  lumped together**. Pick a single factory → a single donut. **Click a donut** (or Tab + Enter)
+  to drop down that factory's **per-season** table (Match / Diff / No Key / Not Compared / Total +
+  its total) right under the charts; click it again or ✕ to close, click another to switch.
+- **Factory totals** — a table with the exact Match / Diff / No Key / Not Compared / Total per
+  factory (one row each, same order as the donuts), plus an overall Total row. _(Until
+  2026-10-16 this was a Factory × Season table; the season split now lives in the drop-down.)_
 - **Empty state** — before you've validated it says "run a validation in Compare Data first."
 
 The verdict / factory / season logic is the **same** the results toolbar uses, so the Summary's

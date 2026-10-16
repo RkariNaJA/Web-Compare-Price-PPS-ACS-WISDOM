@@ -53,10 +53,10 @@ export default function UploadStrip(props: Props) {
         {/* Connectors: one line per source column, merging into the hub below.
             A line animates (flowing dashes) once its source is loaded. The
             viewBox stretches to the card width; strokes stay 2px. */}
-        <svg className="flow-lines" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true">
-          <path className={`flow-line fa${props.dataA ? ' on' : ''}`} d="M50 0 C50 34 150 22 150 56" />
-          <path className={`flow-line fc${props.dataC ? ' on' : ''}`} d="M150 0 V56" />
-          <path className={`flow-line fb${props.dataBFiles.length ? ' on' : ''}`} d="M250 0 C250 34 150 22 150 56" />
+        <svg className="flow-lines" viewBox="0 0 300 76" preserveAspectRatio="none" aria-hidden="true">
+          <path className={`flow-line fa${props.dataA ? ' on' : ''}`} d="M50 0 C50 46 150 30 150 76" />
+          <path className={`flow-line fc${props.dataC ? ' on' : ''}`} d="M150 0 V76" />
+          <path className={`flow-line fb${props.dataBFiles.length ? ' on' : ''}`} d="M250 0 C250 46 150 30 150 76" />
         </svg>
         <div className={`flow-hub${props.canValidate ? ' ready' : ''}`}>
           <span className="load-hint">
