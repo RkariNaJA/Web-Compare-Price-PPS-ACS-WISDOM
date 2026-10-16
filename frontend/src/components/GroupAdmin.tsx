@@ -3,7 +3,7 @@
  * signed-in user has can_manage (the "Groups" button in the header). Every
  * action calls the backend (which re-checks manage permission) and refreshes
  * from the returned full list, so the UI always mirrors the server. Styling
- * follows the app's washi/sumi design system (see .group-* in global.css).
+ * follows the app's corporate orange/white design system (tokens.css) (see .group-* in global.css).
  */
 import { useCallback, useEffect, useState } from 'react';
 import {

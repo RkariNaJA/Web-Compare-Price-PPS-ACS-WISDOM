@@ -4,7 +4,7 @@
  * selected week, and the annotation change history for that week. Read-only.
  * Logins/Changes are scoped to a Sunday–Saturday week and default to the current
  * week (which rolls over at Sunday midnight); use ◀ / ▶ to look back. Every call
- * is manager-gated on the backend. Styling follows the washi/sumi design system.
+ * is manager-gated on the backend. Styling follows the corporate orange/white design system (tokens.css).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { fetchChanges, fetchLogins, fetchPresence } from '../lib/api';

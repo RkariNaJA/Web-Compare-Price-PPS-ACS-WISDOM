@@ -9,13 +9,13 @@ import type { FileColor, KeyPair } from './types';
 export const MAX_B_FILES = 4;
 
 // Row badge palette — one entry per PPS file. Cycles if you allow more than 4 later.
-// Muted naturals (Ma palette) — mid-tones chosen to read on both washi (light)
-// and sumi (dark) grounds, since these are fixed hex values, not theme tokens.
+// Calm partners to the brand orange — mid-tones chosen to read on both the white
+// (light) and charcoal (dark) grounds, since these are fixed hex values, not theme tokens.
 export const FILE_COLORS: FileColor[] = [
-  { hex: '#6b7385', bg: 'rgba(94,102,120,.14)', border: 'rgba(94,102,120,.42)' },   // ai-nezumi indigo
-  { hex: '#a5817a', bg: 'rgba(165,129,122,.14)', border: 'rgba(165,129,122,.42)' }, // toki clay
-  { hex: '#79866a', bg: 'rgba(121,134,106,.14)', border: 'rgba(121,134,106,.42)' }, // rikyū sage
-  { hex: '#a98c4e', bg: 'rgba(169,140,78,.14)', border: 'rgba(169,140,78,.42)' },   // kihada ochre
+  { hex: '#64748b', bg: 'rgba(100,116,139,.14)', border: 'rgba(100,116,139,.42)' }, // slate
+  { hex: '#3a7cb0', bg: 'rgba(58,124,176,.14)', border: 'rgba(58,124,176,.42)' },   // steel blue
+  { hex: '#14918a', bg: 'rgba(20,145,138,.14)', border: 'rgba(20,145,138,.42)' },   // teal
+  { hex: '#c08423', bg: 'rgba(192,132,35,.14)', border: 'rgba(192,132,35,.42)' },   // amber
 ];
 
 // The 5 key columns that link an ACS row to a PPS row. `a` is the ACS header,

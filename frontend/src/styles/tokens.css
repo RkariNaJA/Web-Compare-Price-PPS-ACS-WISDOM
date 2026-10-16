@@ -1,52 +1,56 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   Japanese Minimalism (Ma / 間) palette.
-   Light = "washi" warm paper · Dark = "sumi" warm near-black.
-   Muted naturals over saturated primaries; no gradients, no colored glows.
+   Corporate palette — Hi-Tech Apparel orange (#F05A2C) on white.
+   Light = clean white surfaces · Dark = charcoal with a brighter orange.
+   Orange is the primary accent (and ACS); the other sources use calm
+   slate / steel-blue partners so the brand colour stays the one that pops.
+   Filled accents use the exact brand orange; orange *text* uses the deeper
+   --a-2 so it stays readable (WCAG AA) on white.
    The dark theme follows the OS via prefers-color-scheme and can be forced
-   with [data-theme="light" | "dark"] on the root element.
+   with [data-theme="light" | "dark"] on the root element — the header's
+   Light/Dark switch sets it (hooks/useTheme.tsx).
    ───────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light dark;
 
-  /* surfaces — warm washi paper */
-  --bg: #ece9e1;
-  --surface: #f4f2ea;
-  --surface-2: #e3dfd3;
-  --surface-3: #d9d4c6;
+  /* surfaces — white cards on a very light cool grey page */
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f3f3f5;
+  --surface-3: #e8e8ec;
 
-  /* borders — hairline stone */
-  --border: #d4cfc2;
-  --border-2: #c3bdac;
+  /* borders — hairline grey */
+  --border: #e2e2e7;
+  --border-2: #cfcfd6;
 
-  /* file-source colors — muted naturals */
-  --a: #5e6678;          /* ACS — ai-nezumi indigo-grey */
-  --a-2: #4d5568;
+  /* file-source colors */
+  --a: #f05a2c;          /* ACS — brand orange (also the primary accent) */
+  --a-2: #b83a0e;
   --a-glow: transparent;
 
-  --b: #a5817a;          /* PPS — toki-iro clay */
-  --b-2: #8a5a51;
+  --b: #475569;          /* PPS — slate */
+  --b-2: #334155;
   --b-glow: transparent;
 
-  --c: #79866a;          /* WISDOM / Costsheet — rikyū sage */
-  --c-2: #566448;
+  --c: #2f6f9f;          /* WISDOM / Costsheet — steel blue */
+  --c-2: #245a84;
   --c-glow: transparent;
 
-  --m: #6b7f86;          /* Master Data — nezumi teal-grey */
-  --m-2: #4f6268;
+  --m: #6b7280;          /* Master Data — neutral grey */
+  --m-2: #4b5563;
 
-  /* status — earth tones */
-  --match: #5f7355;
-  --mismatch: #9e5a52;
-  --only: #8a6f37;
-  --notcompared: #6d5a8c;  /* fuji — currency-skipped comparison; distinct from --only (No Key) and --c-2 (WISDOM) */
+  /* status — clear green / red / amber, readable next to the orange */
+  --match: #2e7d4a;
+  --mismatch: #c42b3a;
+  --only: #a16207;
+  --notcompared: #6d4fb0;  /* violet — currency-skipped comparison; distinct from --only (No Key) and --c-2 (WISDOM) */
 
   /* text color for filled accent surfaces (buttons) */
-  --on-accent: #f4f2ea;
+  --on-accent: #ffffff;
 
-  /* text — warm ink */
-  --text: #26251f;
-  --muted: #7c776b;
-  --dim: #a8a294;
+  /* text — near-black ink */
+  --text: #1f2328;
+  --muted: #5b616b;
+  --dim: #8b9099;
 
   /* type */
   --font-ui: 'Inter', system-ui, sans-serif;
@@ -66,38 +70,38 @@
   --sp-6: 32px;
 }
 
-/* ── sumi: warm near-black dark theme ─────────────────────────────────────── */
+/* ── dark: charcoal with a brighter brand orange ──────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
 
-    --bg: #1a1917;
-    --surface: #221f1c;
-    --surface-2: #2a2723;
-    --surface-3: #332f2a;
+    --bg: #141416;
+    --surface: #1c1c1f;
+    --surface-2: #242428;
+    --surface-3: #2d2d32;
 
-    --border: #38352f;
-    --border-2: #45413a;
+    --border: #34343a;
+    --border-2: #43434a;
 
-    --a: #8a93ac;
-    --a-2: #a3abbf;
-    --b: #c6a29a;
-    --b-2: #d4b5ae;
-    --c: #9ba687;
-    --c-2: #b0ba9e;
-    --m: #9fb3b9;
-    --m-2: #b6c6cb;
+    --a: #f26a3d;
+    --a-2: #ff8a5c;
+    --b: #94a3b8;
+    --b-2: #cbd5e1;
+    --c: #6ba6d6;
+    --c-2: #9cc4e6;
+    --m: #a1a7b0;
+    --m-2: #c4c8ce;
 
-    --match: #8ca07e;
-    --mismatch: #c08a82;
-    --only: #c7ac72;
-    --notcompared: #b3a0c9;
+    --match: #5cc07e;
+    --mismatch: #f0727a;
+    --only: #e0a84a;
+    --notcompared: #b29be6;
 
-    --on-accent: #1a1917;
+    --on-accent: #17171a;
 
-    --text: #e7e3d9;
-    --muted: #9a948a;
-    --dim: #6c675e;
+    --text: #ececee;
+    --muted: #a0a0a8;
+    --dim: #74747c;
   }
 }
 
@@ -105,47 +109,47 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg: #ece9e1;
-  --surface: #f4f2ea;
-  --surface-2: #e3dfd3;
-  --surface-3: #d9d4c6;
-  --border: #d4cfc2;
-  --border-2: #c3bdac;
-  --a: #5e6678;  --a-2: #4d5568;
-  --b: #a5817a;  --b-2: #8a5a51;
-  --c: #79866a;  --c-2: #566448;
-  --m: #6b7f86;  --m-2: #4f6268;
-  --match: #5f7355;
-  --mismatch: #9e5a52;
-  --only: #8a6f37;
-  --notcompared: #6d5a8c;
-  --on-accent: #f4f2ea;
-  --text: #26251f;
-  --muted: #7c776b;
-  --dim: #a8a294;
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f3f3f5;
+  --surface-3: #e8e8ec;
+  --border: #e2e2e7;
+  --border-2: #cfcfd6;
+  --a: #f05a2c;  --a-2: #b83a0e;
+  --b: #475569;  --b-2: #334155;
+  --c: #2f6f9f;  --c-2: #245a84;
+  --m: #6b7280;  --m-2: #4b5563;
+  --match: #2e7d4a;
+  --mismatch: #c42b3a;
+  --only: #a16207;
+  --notcompared: #6d4fb0;
+  --on-accent: #ffffff;
+  --text: #1f2328;
+  --muted: #5b616b;
+  --dim: #8b9099;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg: #1a1917;
-  --surface: #221f1c;
-  --surface-2: #2a2723;
-  --surface-3: #332f2a;
-  --border: #38352f;
-  --border-2: #45413a;
-  --a: #8a93ac;  --a-2: #a3abbf;
-  --b: #c6a29a;  --b-2: #d4b5ae;
-  --c: #9ba687;  --c-2: #b0ba9e;
-  --m: #9fb3b9;  --m-2: #b6c6cb;
-  --match: #8ca07e;
-  --mismatch: #c08a82;
-  --only: #c7ac72;
-  --notcompared: #b3a0c9;
-  --on-accent: #1a1917;
-  --text: #e7e3d9;
-  --muted: #9a948a;
-  --dim: #6c675e;
+  --bg: #141416;
+  --surface: #1c1c1f;
+  --surface-2: #242428;
+  --surface-3: #2d2d32;
+  --border: #34343a;
+  --border-2: #43434a;
+  --a: #f26a3d;  --a-2: #ff8a5c;
+  --b: #94a3b8;  --b-2: #cbd5e1;
+  --c: #6ba6d6;  --c-2: #9cc4e6;
+  --m: #a1a7b0;  --m-2: #c4c8ce;
+  --match: #5cc07e;
+  --mismatch: #f0727a;
+  --only: #e0a84a;
+  --notcompared: #b29be6;
+  --on-accent: #17171a;
+  --text: #ececee;
+  --muted: #a0a0a8;
+  --dim: #74747c;
 }
 
 * ,

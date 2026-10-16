@@ -56,8 +56,7 @@ export default function FileSlotCostsheet({ data, onLoad, onClear }: Props) {
             <span className="source-name">{data.name}</span>
           </div>
         ) : (
-          // Green-tinted button (matches --c colour token).
-          <button className="btn btn-primary green" onClick={handleLoad} disabled={loading}>
+          <button className="btn btn-primary" onClick={handleLoad} disabled={loading}>
             {loading ? 'Loading…' : 'Load Costsheet'}
           </button>
         )}

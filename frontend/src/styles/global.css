@@ -649,9 +649,6 @@
   background: var(--a);
   color: var(--on-accent);
 }
-.btn-primary.green {
-  background: var(--c);
-}
 .btn-primary:hover {
   opacity: 0.88;
 }

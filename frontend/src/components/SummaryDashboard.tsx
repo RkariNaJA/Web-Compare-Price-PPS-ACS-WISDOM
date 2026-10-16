@@ -3,7 +3,7 @@
  * switcher). Summarizes the CURRENT validation into ONE Match / Diff / No Key **donut
  * per factory** (small multiples — factories are shown separately, never lumped
  * together), plus a Factory × Season **breakdown table** with the exact numbers. Pure
- * presentation over lib/summary.ts; styling follows the washi/sumi design system.
+ * presentation over lib/summary.ts; styling follows the corporate orange/white design system (tokens.css).
  */
 import { useMemo } from 'react';
 import type { CompRow } from '../lib/types';
