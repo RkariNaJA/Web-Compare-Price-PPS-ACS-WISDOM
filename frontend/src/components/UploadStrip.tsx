@@ -1,7 +1,9 @@
 /**
  * "Set up a validation" — the centred card shown before the first Validate (and
- * again after "Change data"). One row per source (ACS · Costsheet · PPS), then
- * the Validate button, then the collapsed "How matching works" reference.
+ * again after "Change data"). Laid out as a flow: one card per source (ACS ·
+ * Costsheet · PPS) side by side, animated connector lines merging into the
+ * "ready" hub that holds the Validate button, then the collapsed "How matching
+ * works" reference. On narrow screens the cards stack.
  * After a successful Validate, App swaps this card for the thin DataSummaryBar.
  *
  * This is a pure layout/passthrough component — the source rows handle their own
@@ -35,7 +37,7 @@ export default function UploadStrip(props: Props) {
     <div className="setup-wrap">
       <section className="setup-card">
         <h2 className="setup-title">Set up a validation</h2>
-        <div className="setup-rows">
+        <div className="source-grid">
           <FileSlotACS
             data={props.dataA}
             onLoad={props.setDataA}
@@ -48,7 +50,15 @@ export default function UploadStrip(props: Props) {
           />
           <FileSlotPPS files={props.dataBFiles} setFiles={props.setDataBFiles} />
         </div>
-        <div className="setup-foot">
+        {/* Connectors: one line per source column, merging into the hub below.
+            A line animates (flowing dashes) once its source is loaded. The
+            viewBox stretches to the card width; strokes stay 2px. */}
+        <svg className="flow-lines" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true">
+          <path className={`flow-line fa${props.dataA ? ' on' : ''}`} d="M50 0 C50 34 150 22 150 56" />
+          <path className={`flow-line fc${props.dataC ? ' on' : ''}`} d="M150 0 V56" />
+          <path className={`flow-line fb${props.dataBFiles.length ? ' on' : ''}`} d="M250 0 C250 34 150 22 150 56" />
+        </svg>
+        <div className={`flow-hub${props.canValidate ? ' ready' : ''}`}>
           <span className="load-hint">
             {!props.canValidate
               ? 'Load ACS and at least one PPS factory.'

@@ -155,7 +155,7 @@
 }
 .setup-card {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -169,21 +169,142 @@
   font-weight: 600;
   color: var(--text);
 }
-.setup-rows {
+/* Three source cards side by side; the flow lines below assume equal columns */
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.source-card {
+  --tone: var(--a);
   display: flex;
   flex-direction: column;
-}
-.setup-row {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr) 28px;  /* label · control · ✕ */
-  align-items: center;
   gap: 12px;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding: 12px 14px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+  border-radius: var(--r-md);
+  transition: border-color 0.25s;
 }
-.setup-row:last-child {
-  border-bottom: 1px solid var(--border);
+.source-card.sb { --tone: var(--b); }
+.source-card.sc { --tone: var(--c); }
+.source-card.loaded {
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--border));
+  border-top-color: var(--tone);
 }
+.source-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+.source-card-head .source-clear,
+.source-card-head .source-tag {
+  margin-left: auto;
+}
+.db-icon {
+  color: var(--tone);
+  flex-shrink: 0;
+}
+.source-tag {
+  font-size: 0.66rem;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+/* Narrow card: show the source name on its own line under the row count */
+.source-card .source-status {
+  flex-wrap: wrap;
+}
+.source-card .source-name {
+  margin-left: 0;
+  flex-basis: 100%;
+}
+
+/* Connectors from each card into the hub */
+.flow-lines {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin: -16px 0;          /* sit flush between the cards and the hub */
+  overflow: visible;
+}
+.flow-line {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+  stroke-dasharray: 3 5;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.25s;
+}
+.flow-line.on {
+  stroke-dasharray: 7 6;
+  animation: flow-dash 0.9s linear infinite;
+}
+.flow-line.fa.on { stroke: var(--a); }
+.flow-line.fb.on { stroke: var(--b); }
+.flow-line.fc.on { stroke: var(--c); }
+@keyframes flow-dash {
+  to { stroke-dashoffset: -13; }
+}
+@keyframes flow-dash-v {
+  to { background-position: 0 13px; }
+}
+
+/* Hub: where the sources combine — status line + Validate */
+.flow-hub {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  transition: border-color 0.25s, background 0.25s;
+}
+.flow-hub::before {         /* arrowhead where the lines arrive */
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--border);
+  transition: border-color 0.25s;
+}
+.flow-hub.ready {
+  border-style: solid;
+  border-color: var(--match);
+  background: color-mix(in srgb, var(--match) 8%, var(--surface));
+}
+.flow-hub.ready::before {
+  border-top-color: var(--match);
+}
+.flow-hub .load-hint {
+  margin-right: auto;
+}
+.flow-hub.ready .load-hint {
+  color: var(--match);
+  font-weight: 600;
+}
+.flow-hub .btn-primary {
+  padding: 10px 22px;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-line.on,
+  .source-card.loaded::after {
+    animation: none;
+  }
+}
+
 .setup-ctrl {
   display: flex;
   align-items: center;
@@ -270,19 +391,6 @@
 .factory-pick.loaded {
   cursor: default;
   opacity: 0.5;
-}
-.setup-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-}
-.setup-foot .load-hint {
-  margin-right: auto;
-}
-.setup-foot .btn-primary {
-  padding: 10px 22px;
-  font-weight: 600;
 }
 .load-hint {
   font-size: 0.78rem;
@@ -1503,13 +1611,34 @@ th.grp {
     align-items: center;
   }
 }
-/* Narrow windows: setup rows stack label above control */
+/* Narrow windows: source cards stack, each with a short animated connector
+   running straight down; the merging SVG lines are hidden. */
 @media (max-width: 640px) {
-  .setup-row {
-    grid-template-columns: minmax(0, 1fr) 28px;
+  .source-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+    margin-bottom: 10px;   /* + the card gap = room for the last connector */
   }
-  .setup-row > .slot-label {
-    grid-column: 1 / -1;
+  .source-card {
+    position: relative;
+  }
+  .source-card::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -27px;
+    width: 2px;
+    height: 26px;
+    transform: translateX(-50%);
+    background: repeating-linear-gradient(to bottom, var(--border) 0 3px, transparent 3px 8px);
+  }
+  .source-card.loaded::after {
+    background: repeating-linear-gradient(to bottom, var(--tone) 0 7px, transparent 7px 13px);
+    background-size: 2px 13px;
+    animation: flow-dash-v 0.9s linear infinite;
+  }
+  .flow-lines {
+    display: none;
   }
   .setup-wrap {
     padding: 16px;

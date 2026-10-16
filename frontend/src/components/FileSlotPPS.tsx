@@ -16,6 +16,7 @@ import { FILE_COLORS, MAX_B_FILES, STRICT_B_COLS } from '../lib/constants';
 import { fetchPPS, fetchPPSFactories } from '../lib/api';
 import { normalizeSizeToken } from '../lib/normalize';
 import { useToast } from '../hooks/useToast';
+import DbIcon from './DbIcon';
 
 interface Props {
   files: PPSFile[];
@@ -123,9 +124,13 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
   const pendingCount = factories.filter((f) => selected.has(f) && !loadedNames.has(f)).length;
 
   return (
-    // Setup-card row: label · (factory checkboxes + Load, then one pill per loaded factory)
-    <div className="setup-row">
-      <span className="slot-label lb">PPS</span>
+    // Source card: header, then factory checkboxes + Load, then one pill per loaded factory
+    <div className={`source-card sb${files.length ? ' loaded' : ''}`}>
+      <div className="source-card-head">
+        <DbIcon />
+        <span className="slot-label lb">PPS</span>
+        <span className="source-tag">Required</span>
+      </div>
       <div className="setup-ctrl pps">
         {factoriesError ? (
           <button className="btn btn-ghost" onClick={loadFactories}>
@@ -180,7 +185,6 @@ export default function FileSlotPPS({ files, setFiles }: Props) {
           </div>
         )}
       </div>
-      <span />
     </div>
   );
 }

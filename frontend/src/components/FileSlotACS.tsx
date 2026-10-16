@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { TableData } from '../lib/types';
 import { fetchACS } from '../lib/api';
 import { useToast } from '../hooks/useToast';
+import DbIcon from './DbIcon';
 
 interface Props {
   data: TableData | null;              // null until the user clicks the load button
@@ -32,9 +33,19 @@ export default function FileSlotACS({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    // Setup-card row: label · (Load button | "✓ N rows") · ✕
-    <div className="setup-row">
-      <span className="slot-label la">ACS</span>
+    // Source card: header (icon · label · Required | ✕), then Load button or "✓ N rows"
+    <div className={`source-card sa${data ? ' loaded' : ''}`}>
+      <div className="source-card-head">
+        <DbIcon />
+        <span className="slot-label la">ACS</span>
+        {data ? (
+          <button className="source-clear" onClick={onClear} title="Clear ACS">
+            ✕
+          </button>
+        ) : (
+          <span className="source-tag">Required</span>
+        )}
+      </div>
       <div className="setup-ctrl">
         {data ? (
           <div className="source-status" title={data.name}>
@@ -47,13 +58,6 @@ export default function FileSlotACS({ data, onLoad, onClear }: Props) {
           </button>
         )}
       </div>
-      {data ? (
-        <button className="source-clear" onClick={onClear} title="Clear ACS">
-          ✕
-        </button>
-      ) : (
-        <span />
-      )}
     </div>
   );
 }

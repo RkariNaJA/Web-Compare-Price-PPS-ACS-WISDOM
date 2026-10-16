@@ -10,6 +10,7 @@ import { useState } from 'react';
 import type { TableData } from '../lib/types';
 import { fetchCostsheet } from '../lib/api';
 import { useToast } from '../hooks/useToast';
+import DbIcon from './DbIcon';
 
 interface Props {
   data: TableData | null;
@@ -35,9 +36,19 @@ export default function FileSlotCostsheet({ data, onLoad, onClear }: Props) {
   };
 
   return (
-    // Setup-card row: label · (Load button | "✓ N rows") · ✕
-    <div className="setup-row">
-      <span className="slot-label lc">Costsheet</span>
+    // Source card: header (icon · label · Optional | ✕), then Load button or "✓ N rows"
+    <div className={`source-card sc${data ? ' loaded' : ''}`}>
+      <div className="source-card-head">
+        <DbIcon />
+        <span className="slot-label lc">Costsheet</span>
+        {data ? (
+          <button className="source-clear" onClick={onClear} title="Clear Costsheet">
+            ✕
+          </button>
+        ) : (
+          <span className="source-tag">Optional</span>
+        )}
+      </div>
       <div className="setup-ctrl">
         {data ? (
           <div className="source-status" title={data.name}>
@@ -51,13 +62,6 @@ export default function FileSlotCostsheet({ data, onLoad, onClear }: Props) {
           </button>
         )}
       </div>
-      {data ? (
-        <button className="source-clear" onClick={onClear} title="Clear Costsheet">
-          ✕
-        </button>
-      ) : (
-        <span />
-      )}
     </div>
   );
 }
