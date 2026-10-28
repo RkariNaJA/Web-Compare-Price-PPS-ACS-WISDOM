@@ -2,7 +2,7 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-10-16 · **Original author / design contact:** BY PCK
+**Last updated:** 2026-10-28 · **Original author / design contact:** BY PCK
 
 [← Back to the project overview](../README.md)
 
@@ -1484,6 +1484,13 @@ Equality is `fobEq`, the same epsilon-`0.0001` numeric check (string fallback) t
 
 **Sticky header:** both header rows stay pinned while the table scrolls vertically. This depends on `.table-wrap` being the element that scrolls, not the page. See §8.7 before changing the results panel layout.
 
+**Horizontal scrolling (added 2026-10-28):** the table is far wider than the screen, so there are three ways to move sideways:
+- A **slider bar** between the "Show first N rows" bar and the headers (`.table-hscroll`). It mirrors `.table-wrap`'s own horizontal scrollbar, and the two are kept in sync both ways by `scroll` listeners in `ResultsTable.tsx`, with a guard flag so they don't echo each other. Its inner spacer is sized to `.table-wrap`'s `scrollWidth`, measured with a `ResizeObserver` on the wrapper and the table, so it follows column resizes and the Costsheet columns appearing. It is only rendered when the table overflows.
+- The **mouse wheel over the slider bar or the header rows** scrolls sideways (a non-passive `wheel` listener turns `deltaY` into `scrollLeft`). Over the data rows the wheel still scrolls vertically.
+- **Shift + wheel** anywhere scrolls sideways (native browser behaviour).
+
+Both scrollbars are 12px with a `--muted` thumb (`--text` on hover), styled in `global.css`. They are WebKit/Chromium-only styles; Firefox shows its default scrollbar.
+
 **Row limit (render cap):** only the first **100** rows are put in the DOM by default, so large validations (3,000+ rows) don't lag the page. A **"Show first N rows"** dropdown raises the limit to 500 / 1,000 / 3,000 / 5,000 — higher values render progressively slower. The cap affects **display only**: filters, toolbar counts, and CSV export always use the full result set. When more rows exist than the limit, a hint row at the bottom says to raise the limit or export CSV. Options live in `ROW_LIMIT_OPTIONS` in `ResultsTable.tsx`.
 
 ### 7.4 Filters & Search
@@ -2083,7 +2090,7 @@ Check the size. If the PPS row is `ALL_REG_SIZE_RB` but Costsheet has `ALL_EXTEN
 
 ### Table looks squeezed, hard to read
 
-Fixed 2026-06-30 — cells use `padding: 7px 12px` and the table has `width: max-content` so it scrolls horizontally instead of cramping. If it regresses, check `table.result tbody td` in `src/styles/global.css`.
+Fixed 2026-06-30 — cells use `padding: 7px 12px` and the table has `width: max-content` so it scrolls horizontally instead of cramping. If it regresses, check `table.result tbody td` in `src/styles/global.css`. To move across the columns, use the slider bar above the headers, the mouse wheel over the headers, or Shift + wheel (see §7.3).
 
 ### Only 1 PPS file loads when I drop 4
 

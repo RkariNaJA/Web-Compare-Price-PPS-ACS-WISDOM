@@ -139,6 +139,67 @@ export default function ResultsTable({
     if (table && row1) table.style.setProperty('--hdr-row1-h', `${row1.getBoundingClientRect().height}px`);
   }, [hasC, colWidths]);
 
+  // ── Horizontal scrolling ──────────────────────────────────────────────────
+  // The table is much wider than the screen, and .table-wrap's own scrollbar
+  // sits at the bottom of the panel. A mirrored slider bar above the table is
+  // kept in sync with .table-wrap's scrollLeft so the user can drag it without
+  // hunting for the bottom edge. Mouse wheel over the slider bar or the header
+  // rows scrolls sideways (Shift+wheel works anywhere, natively).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const hbarRef = useRef<HTMLDivElement>(null);
+  const [scrollW, setScrollW] = useState(0);
+  const [viewW, setViewW] = useState(0);
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const table = tableRef.current;
+    if (!wrap || !table) return;
+    const measure = () => {
+      setScrollW(wrap.scrollWidth);
+      setViewW(wrap.clientWidth);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const hbar = hbarRef.current;
+    const thead = tableRef.current?.tHead;
+    if (!wrap || !hbar) return;
+    // Guard flag stops the two scroll handlers from echoing each other.
+    let syncing = false;
+    const fromWrap = () => {
+      if (syncing) { syncing = false; return; }
+      syncing = true;
+      hbar.scrollLeft = wrap.scrollLeft;
+    };
+    const fromBar = () => {
+      if (syncing) { syncing = false; return; }
+      syncing = true;
+      wrap.scrollLeft = hbar.scrollLeft;
+    };
+    // Non-passive so preventDefault can stop the vertical scroll.
+    const wheelSideways = (e: WheelEvent) => {
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // already horizontal
+      e.preventDefault();
+      wrap.scrollLeft += e.deltaY;
+    };
+    wrap.addEventListener('scroll', fromWrap);
+    hbar.addEventListener('scroll', fromBar);
+    hbar.addEventListener('wheel', wheelSideways, { passive: false });
+    thead?.addEventListener('wheel', wheelSideways, { passive: false });
+    return () => {
+      wrap.removeEventListener('scroll', fromWrap);
+      hbar.removeEventListener('scroll', fromBar);
+      hbar.removeEventListener('wheel', wheelSideways);
+      thead?.removeEventListener('wheel', wheelSideways);
+    };
+  }, [scrollW > viewW]);
+
   // Drag handle rendered inside a header cell; `col` is the colgroup index
   // whose right edge this handle moves. Pointer capture keeps the drag alive
   // even when the cursor leaves the 6px strip. During the drag we mutate the
@@ -221,7 +282,12 @@ export default function ResultsTable({
           {rows.length > displayLimit && ' (higher limits may slow the page)'}
         </span>
       </div>
-      <div className="table-wrap">
+      {scrollW > viewW && (
+        <div className="table-hscroll" ref={hbarRef} title="Drag or use the mouse wheel to scroll columns">
+          <div style={{ width: scrollW, height: 1 }} />
+        </div>
+      )}
+      <div className="table-wrap" ref={wrapRef}>
       <table
         className={`result${colWidths ? ' resizable' : ''}`}
         ref={tableRef}
