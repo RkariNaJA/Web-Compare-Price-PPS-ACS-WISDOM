@@ -44,8 +44,10 @@ This tool replaces that workflow.
 - **Shared annotations** — an *Error From* dropdown, a *Done* checkbox and a free-text *Remark* per
   row, saved server-side, so what one person marks the next person sees, stamped with who saved it
   (every change is also kept in the admin change log).
-- **Summary view** — a Match / Diff / No Key donut per factory plus a factory × season breakdown,
-  never lumping factories together.
+- **Summary view** — a Match / Diff / No Key donut per factory, never lumping factories together;
+  click a factory's donut to drop down its per-season numbers, with a factory-totals table below.
+- **Company look** — the corporate orange-and-white theme, with a matching dark mode and a
+  Light/Dark switch in the header that remembers each user's choice.
 - **CSV export** of the full comparison, annotations included.
 - **Active Directory login** with per-group editor / read-only roles enforced on both the UI and the API.
 
@@ -96,7 +98,7 @@ caused — is in the [handover documentation](docs/HANDOVER.md#core-logic).
 | **Database** | SQL Server via ODBC, Windows integrated auth | Read-only access to all three systems of record |
 | **Frontend** | Vite · React 18 · TypeScript (strict) | Fast builds, typed domain logic |
 | **Annotations** | SQLite | The one thing the app writes |
-| **Styling** | Plain CSS with design tokens | No framework; light/dark from one token file |
+| **Styling** | Plain CSS with design tokens | No framework; corporate palette, light/dark from one token file |
 
 Deliberately **no** Redux, no React Query, no chart library and no CSS framework. The comparison
 logic lives in `frontend/src/lib/` as pure functions with **zero React**, which is what makes it

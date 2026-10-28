@@ -2,7 +2,7 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-10-15 · **Original author / design contact:** BY PCK
+**Last updated:** 2026-10-16 · **Original author / design contact:** BY PCK
 
 [← Back to the project overview](../README.md)
 
@@ -774,7 +774,7 @@ Run: `python -m pytest tests/ -v`
 | `components/DataSummaryBar.tsx`    | The **result cards** above the results: one card per source (PPS rows compared · ACS / Costsheet coverage + FOB agreement), plus **Re-validate** / **Change data**. |
 | `components/ResultsToolbar.tsx`    | Two fixed rows — row 1: stats + **Save** (disabled for read-only users) / Export CSV; row 2: verdict buttons, dropdowns, search, Clear Filters. |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
-| `components/SummaryDashboard.tsx`  | Validation Summary — Match/Diff/No-Key by factory & season (all users).                                                                  |
+| `components/SummaryDashboard.tsx`  | Validation Summary — a donut per factory (click → per-season drop-down) + factory totals (all users).                                                                  |
 | `components/GroupAdmin.tsx`        | Admin screen: create groups, add members, set edit/manage (manager-only).                                                                |
 | `components/LogDashboard.tsx`      | Admin Log page: online-now / logins / change history (manager-only).                                                                     |
 | `hooks/useAuth.tsx`                | Auth context — login/logout, calls `/me` on load.                                                                                        |
@@ -1541,6 +1541,28 @@ totals always equal the toolbar's Match / Diff / No Key counts. It's **read-only
 it shows nothing a user can't already see in the Compare table. Switching tabs keeps your results
 (it reads `App`'s state — no re-validate). Charts are hand-rolled (no chart library), token-driven
 for light/dark. Lives in `components/SummaryDashboard.tsx` + `lib/summary.ts` (pure aggregation).
+
+### 7.7 Theme — corporate palette + Light/Dark switch
+
+_Added 2026-10-16._ Every colour is a CSS variable in `styles/tokens.css` (the only hard-coded
+colours are the PPS factory dots, `FILE_COLORS` in `lib/constants.ts`), so restyling means editing
+that one file.
+
+- **Palette** — the company orange **`#F05A2C`** (sampled from the logo) on white. It is the
+  primary accent (buttons, Validate, active states) and the ACS colour; PPS is slate, Costsheet
+  steel blue, and the verdict colours stay clearly green / red / amber.
+- ⚠️ **Contrast** — white text on the exact brand orange is only ~3.4:1 (WCAG AA wants 4.5:1 for
+  small text). So the exact orange is used for *filled* surfaces, and a deeper **`--a-2: #B83A0E`**
+  wherever orange is *text*. Keep that split if you add new orange text.
+- **Dark theme** — charcoal surfaces with a brighter orange (`#F26A3D`); every token is redefined
+  in three places in `tokens.css` (OS-dark media query, `[data-theme='light']`,
+  `[data-theme='dark']`) — change all three together.
+- **Light/Dark switch** — the header button (`hooks/useTheme.tsx`) sets `data-theme` on `<html>`
+  and saves the pick in `localStorage` (`validator-theme`), per browser. With no saved pick the OS
+  setting decides. `applyInitialTheme()` runs in `main.tsx` before React renders, so there is no
+  flash of the wrong theme. The login page has no switch; it uses the saved pick or the OS.
+- No JavaScript reads colours, so everything — the Summary charts included — follows the switch
+  through CSS alone.
 
 ---
 
