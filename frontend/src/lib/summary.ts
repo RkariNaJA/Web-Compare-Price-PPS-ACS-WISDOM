@@ -3,6 +3,9 @@
  * into Match / Diff / No Key / Not Compared counts, grouped by factory, by season, and
  * by (factory × season). No React — just data in, data out (so it's trivially testable).
  *
+ * Currency twins (the THB copy of a quote that also has a USD row — CompRow.currencyTwin)
+ * are skipped, so each quote is counted once; they are still listed in the results table.
+ *
  * Verdict mapping (identical to the results toolbar, via verdictOf — see comparison.ts):
  *   No Key = status 'noKeyMatch'  ·  Not Compared = comparable is false  ·
  *   Match = valueMatch  ·  Diff = matched, comparable, but not equal
@@ -47,6 +50,7 @@ export function summarize(rows: CompRow[]): Summary {
   const facSea = new Map<string, FactorySeasonRow>();
 
   for (const r of rows) {
+    if (r.currencyTwin) continue;
     const f = factoryOf(r);
     const s = seasonOf(r);
     const v = verdictOf(r);

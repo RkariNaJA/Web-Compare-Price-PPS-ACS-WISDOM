@@ -15,7 +15,8 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CompRow, RowAnnotation } from '../lib/types';
-import { verdictOf } from '../lib/comparison';
+import { fobEq, verdictOf } from '../lib/comparison';
+import RowDetailsModal from './RowDetailsModal';
 import { PREFERRED_CURRENCY } from '../lib/constants';
 import { NO_COSTSHEET, UNASSIGNED } from '../lib/merTeam';
 
@@ -85,15 +86,6 @@ function RemarkCell({
   );
 }
 
-// Same FOB equality the comparison uses: numeric with a tiny epsilon, else
-// case-insensitive string equality when either side isn't a number.
-function fobEq(a: string, b: string): boolean {
-  const x = parseFloat(a);
-  const y = parseFloat(b);
-  if (!isNaN(x) && !isNaN(y)) return Math.abs(x - y) < 0.0001;
-  return a.toLowerCase() === b.toLowerCase();
-}
-
 export default function ResultsTable({
   rows,
   hasC,
@@ -107,6 +99,8 @@ export default function ResultsTable({
   // above the table; deliberately NOT reset on re-validate so the user's choice sticks.
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_ROW_LIMIT);
   const shown = rows.slice(0, displayLimit);
+  // Diff / No Key row whose details pop-up is open (null = closed).
+  const [detailRow, setDetailRow] = useState<CompRow | null>(null);
 
   // ── Resizable columns ─────────────────────────────────────────────────────
   // The table first renders with auto layout; once a data row exists we measure
@@ -114,7 +108,7 @@ export default function ResultsTable({
   // fixed), and let the user drag the right edge of any header cell.
   // +5 leaf columns before the sticky "ACS Match?" verdict: the user-filled
   // "Error From" / "Done" / "Remark", plus "Changed By" / "Changed On" attribution.
-  const colCount = hasC ? 27 : 21; // leaf columns, must match the header rows below
+  const colCount = hasC ? 29 : 23; // leaf columns, must match the header rows below
   const tableRef = useRef<HTMLTableElement>(null);
   const [colWidths, setColWidths] = useState<number[] | null>(null);
   const dragRef = useRef<{ idx: number; startX: number; startW: number; lastW: number } | null>(
@@ -240,8 +234,10 @@ export default function ResultsTable({
   // Order matches the header rows.
   const ci = {
     used: hasC ? 13 : 12,
-    ppsFob: hasC ? 14 : 13,
-    acsFob: hasC ? 15 : 14,
+    ppsFinal: hasC ? 14 : 13,
+    ppsExt: hasC ? 15 : 14,
+    acsFinal: hasC ? 16 : 15,
+    acsExt: hasC ? 17 : 16,
   };
 
   const totalW = colWidths ? colWidths.reduce((a, b) => a + b, 0) : 0;
@@ -311,14 +307,16 @@ export default function ResultsTable({
             {/* Size Comparison spans 2 columns by default, 3 when Costsheet is loaded */}
             <th className="hlogic grp" colSpan={hasC ? 3 : 2}>Size Comparison</th>
             <th className="hlogic grp">FOB Source</th>
-            <th className="hb grp">PPS FOB</th>
-            <th className="ha grp">ACS FOB</th>
+            <th className="hb grp">PPS FINAL FOB</th>
+            <th className="hb grp">PPS EXT SIZE FOB</th>
+            <th className="ha grp">ACS FINAL FOB</th>
+            <th className="ha grp">ACS EXT SIZE FOB</th>
             {hasC && (
               <>
                 <th className="hc grp">WISDOM FINAL FOB</th>
                 <th className="hc grp">WISDOM EXT SIZE FOB</th>
-                <th className="hc" rowSpan={2}>Version{resizer(18)}</th>
-                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(19)}</th>
+                <th className="hc" rowSpan={2}>Version{resizer(20)}</th>
+                <th className="hc" rowSpan={2}>Cost Sheet No{resizer(21)}</th>
                 <th className="hc">Max Input Date</th>
               </>
             )}
@@ -345,13 +343,15 @@ export default function ResultsTable({
             <th className="hlogic">ACS CBDID SIZE{resizer(11)}</th>
             {hasC && <th className="hc">WISDOM SIZE{resizer(12)}</th>}
             <th className="hlogic grp">Used{resizer(ci.used)}</th>
-            <th className="hb grp">Value{resizer(ci.ppsFob)}</th>
-            <th className="ha grp">Value{resizer(ci.acsFob)}</th>
+            <th className="hb grp">Value{resizer(ci.ppsFinal)}</th>
+            <th className="hb grp">Value{resizer(ci.ppsExt)}</th>
+            <th className="ha grp">Value{resizer(ci.acsFinal)}</th>
+            <th className="ha grp">Value{resizer(ci.acsExt)}</th>
             {hasC && (
               <>
-                <th className="hc grp">Value{resizer(16)}</th>
-                <th className="hc grp">Value{resizer(17)}</th>
-                <th className="hc">Max Date{resizer(20)}</th>
+                <th className="hc grp">Value{resizer(18)}</th>
+                <th className="hc grp">Value{resizer(19)}</th>
+                <th className="hc">Max Date{resizer(22)}</th>
               </>
             )}
           </tr>
@@ -386,15 +386,52 @@ export default function ResultsTable({
             // problem".)
             const dbCls = isMatch ? 'cell-match' : isNoKey ? 'cell-empty' : isNotCompared ? 'cell-notcompared' : 'cell-miss';
             const lqCls = dbCls;
+            // PPS has ONE price per row (LOCAL_QUOTE_AMOUNT). It goes in PPS EXT SIZE FOB when
+            // the PPS size is in the extended group (ALL_EXTEND_SIZE_RB), otherwise in PPS
+            // FINAL FOB (regular sizes, and sizes in neither list). The other column is "—".
+            const ppsExt = row.bSize === 'ALL_EXTEND_SIZE_RB';
+            const ppsCell = (extCol: boolean) =>
+              extCol === ppsExt ? (
+                <td className={`grp ${lqCls}`}>
+                  {row.localQuoteVal || '—'}
+                  {row.currency && row.currency.toUpperCase() !== PREFERRED_CURRENCY && (
+                    <span style={{ opacity: 0.6, marginLeft: 4, fontSize: '.85em' }}>
+                      {row.currency}
+                    </span>
+                  )}
+                </td>
+              ) : (
+                <td className="grp">—</td>
+              );
+            // ACS FINAL FOB / EXT SIZE FOB cells — both values shown, but only the column
+            // ACS priced from (fobSource, picked by PPS size vs CBDID size) carries the
+            // verdict colour; the other stays plain, same rule as the WISDOM pair.
+            // No Key rows have no ACS row, so both are grey. On a THB row the values are
+            // ACS's local (THB) prices; if ACS has none, the picked column reads "not compared".
+            const acsFobCls = (src: CompRow['fobSource']): string => {
+              if (isNoKey) return 'cell-empty';
+              if (row.fobSource !== src) return '';
+              return row.acsCompared ? dbCls : 'cell-notcompared';
+            };
 
             // WISDOM FINAL FOB / EXT SIZE FOB cells — display-only (the verdict still
-            // uses the size-picked cFobValue). Green only when the value equals BOTH
-            // PPS FOB and ACS FOB; blank or No Key rows have nothing to compare.
-            const wFobCls = (v: string): string => {
+            // uses the size-picked cFobValue). Only the column the WISDOM size picks
+            // gets a colour (Ext Size FOB for an extended size, Final FOB otherwise);
+            // the other one stays plain so users don't read it as part of the check.
+            // Green only when the value equals PPS FOB and ACS FOB too (when ACS took part);
+            // on a THB row (l4l) all three are local (THB) prices. Blank or No Key rows have
+            // nothing to compare.
+            const wFobCls = (v: string, isExtCol: boolean): string => {
+              if (isExtCol !== row.cIsExt) return '';
               if (isNotCompared) return 'cell-notcompared';
               if (!v || isNoKey) return 'cell-empty';
-              return fobEq(v, row.localQuoteVal) && fobEq(v, row.dbFobValue) ? 'cell-match' : 'cell-miss';
+              const ok = fobEq(v, row.localQuoteVal) && (!row.acsCompared || fobEq(v, row.dbFobValue));
+              return ok ? 'cell-match' : 'cell-miss';
             };
+            // Small currency tag after an ACS / WISDOM value when it is the local (THB) price.
+            const l4lTag = row.l4l ? (
+              <span style={{ opacity: 0.6, marginLeft: 4, fontSize: '.85em' }}>{row.currency}</span>
+            ) : null;
 
             // Small pill in the "FOB Source" column showing which ACS FOB was used.
             const fobTagCls =
@@ -411,81 +448,23 @@ export default function ResultsTable({
                 : 'N/A';
 
             // Build the rightmost "ACS Match?" cell content — 3 possible states:
-            //   • noKeyMatch → warning + join-key diagnostic + list of DB colours
+            //   • noKeyMatch → warning + "details ›" (pop-up: join key, ACS colours, ...)
             //   • match      → green ✓ badge
-            //   • diff       → red ✗ badge + reason chips (which of the 3 sources disagreed)
+            //   • diff       → red ✗ badge + reason chips + "details ›" (pop-up breakdown)
             let acsResultNode: React.ReactNode;
             if (isNoKey) {
-              // Which side(s) of the data are missing for this PPS row?
-              //   • ACS is always missing (that's what "noKeyMatch" means).
-              //   • WISDOM is missing only if Costsheet is loaded AND its lookup returned nothing.
-              const hasDbColors = !!(row.dbColorsForKey && row.dbColorsForKey.length);
-              const wisdomMissing = hasC && !row.cMatched;
-              const missingSides: string[] = ['ACS'];
-              if (wisdomMissing) missingSides.push('WISDOM');
-
-              // The full diagnostic is folded behind a <details> so the sticky
-              // verdict column stays narrow — it used to force ~280px width on
-              // every row, hiding data columns on small screens.
+              // The diagnostic (missing sides, join key, the colours ACS does have)
+              // lives in RowDetailsModal so this sticky verdict column stays narrow.
               acsResultNode = (
                 <>
                   <span style={{ color: 'var(--only)' }}>⚠ No Key Match</span>
-                  <details className="nokey-details">
-                    <summary>details</summary>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      color: 'var(--text)',
-                      fontSize: '.65rem',
-                      lineHeight: 1.5,
-                      whiteSpace: 'normal',
-                    }}
+                  <button
+                    type="button"
+                    className="dd-open"
+                    onClick={() => setDetailRow(row)}
                   >
-                    {/* Summary — which sides are missing */}
-                    <div>
-                      <span style={{ color: 'var(--muted)' }}>Missing in: </span>
-                      <span style={{ color: 'var(--mismatch)', fontWeight: 600 }}>
-                        {missingSides.join(' · ')}
-                      </span>
-                    </div>
-
-                    {/* Composite key for debugging */}
-                    <div style={{ marginTop: 3 }}>
-                      <span style={{ color: 'var(--text)' }}>Key: </span>
-                      <span style={{ color: 'var(--muted)' }}>{row.joinKeyStr || ''}</span>
-                    </div>
-
-                    {/* ACS detail — either lists colors we DO have, or says nothing at all */}
-                    <div style={{ marginTop: 3 }}>
-                      <span style={{ color: 'var(--a-2)' }}>ACS: </span>
-                      {hasDbColors ? (
-                        <>
-                          has colors{' '}
-                          <span style={{ color: 'var(--a-2)' }}>
-                            {row.dbColorsForKey!.join(', ')}
-                          </span>{' '}
-                          for this season+style+factory (this PPS color not found)
-                        </>
-                      ) : (
-                        <span style={{ color: 'var(--mismatch)' }}>
-                          no record for this season+style+factory
-                        </span>
-                      )}
-                    </div>
-
-                    {/* WISDOM detail — only meaningful when Costsheet is loaded */}
-                    {hasC && (
-                      <div style={{ marginTop: 3 }}>
-                        <span style={{ color: 'var(--c-2)' }}>WISDOM: </span>
-                        {row.cMatched ? (
-                          <span style={{ color: 'var(--match)' }}>has record</span>
-                        ) : (
-                          <span style={{ color: 'var(--mismatch)' }}>no record</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  </details>
+                    details ›
+                  </button>
                 </>
               );
             } else if (isNotCompared) {
@@ -518,12 +497,22 @@ export default function ResultsTable({
                 const d = Math.round((x - y) * 10000) / 10000;
                 return ` (${d > 0 ? '+' : ''}${d})`;
               };
+              // ACS only counts when it took part (USD rows); on THB rows the WISDOM
+              // check is against its L4L price, and a blank L4L cell means "no THB price".
               const reasons: string[] = [];
-              if (row.lqVsAcs === false)
-                reasons.push(`PPS!=ACS${fmtDiff(row.localQuoteVal, row.dbFobValue)}`);
-              if (hasC && row.cMatched && row.cMatch === false)
-                reasons.push(`PPS!=WISDOM${fmtDiff(row.localQuoteVal, row.cFobValue)}`);
+              if (row.acsCompared && row.lqVsAcs === false)
+                reasons.push(
+                  `PPS!=ACS${row.l4l ? ' THB' : ''}${fmtDiff(row.localQuoteVal, row.dbFobValue)}`,
+                );
+              if (hasC && row.cMatched && row.cMatch === false) {
+                if (row.l4l && !row.cFobValue) reasons.push('No WISDOM THB price');
+                else
+                  reasons.push(
+                    `PPS!=WISDOM${row.l4l ? ' THB' : ''}${fmtDiff(row.localQuoteVal, row.cFobValue)}`,
+                  );
+              }
               if (hasC && !row.cMatched) reasons.push('No WISDOM');
+
               acsResultNode = (
                 <>
                   <span className="badge-miss" />
@@ -535,6 +524,13 @@ export default function ResultsTable({
                       {reasons.join(' · ')}
                     </div>
                   )}
+                  <button
+                    type="button"
+                    className="dd-open"
+                    onClick={() => setDetailRow(row)}
+                  >
+                    details ›
+                  </button>
                 </>
               );
             }
@@ -585,27 +581,32 @@ export default function ResultsTable({
                 <td className="grp" style={{ textAlign: 'center' }}>
                   <span className={fobTagCls}>{fobTagText}</span>
                 </td>
-                {/* PPS LOCAL_QUOTE_AMOUNT + ACS FOB value (both coloured by the 3-way verdict) */}
-                <td className={`grp ${lqCls}`}>
-                  {row.localQuoteVal || '—'}
-                  {row.currency && row.currency.toUpperCase() !== PREFERRED_CURRENCY && (
-                    <span style={{ opacity: 0.6, marginLeft: 4, fontSize: '.85em' }}>
-                      {row.currency}
-                    </span>
-                  )}
+                {/* PPS Final / Ext Size FOB (one holds LOCAL_QUOTE_AMOUNT, by PPS size) + ACS
+                    Final / Ext Size FOB (coloured by the 3-way verdict; for ACS only the
+                    size-picked column) */}
+                {ppsCell(false)}
+                {ppsCell(true)}
+                <td className={`grp ${acsFobCls('FinalFOB')}`}>
+                  {row.dbFinalFobValue || '—'}
+                  {row.dbFinalFobValue && l4lTag}
                 </td>
-                <td className={`grp ${dbCls}`}>{row.dbFobValue || '—'}</td>
+                <td className={`grp ${acsFobCls('ExtSzFOB')}`}>
+                  {row.dbExtFobValue || '—'}
+                  {row.dbExtFobValue && l4lTag}
+                </td>
                 {/* Costsheet columns: WISDOM Final FOB + Ext Size FOB + Version + Cost Sheet No + Max Input Date.
                     Only when File C is loaded. If no CS row matched, show em-dashes. */}
                 {hasC && (
                   <>
                     {row.cMatched ? (
                       <>
-                        <td className={`grp ${wFobCls(row.cFinalFobValue)}`}>
+                        <td className={`grp ${wFobCls(row.cFinalFobValue, false)}`}>
                           {row.cFinalFobValue || '—'}
+                          {row.cFinalFobValue && l4lTag}
                         </td>
-                        <td className={`grp ${wFobCls(row.cExtFobValue)}`}>
+                        <td className={`grp ${wFobCls(row.cExtFobValue, true)}`}>
                           {row.cExtFobValue || '—'}
+                          {row.cExtFobValue && l4lTag}
                         </td>
                         <td className="cell-c">{row.cVersionVal || '—'}</td>
                         <td className="cell-c">{row.cCostSheetNo || '—'}</td>
@@ -699,6 +700,9 @@ export default function ResultsTable({
         </tbody>
       </table>
       </div>
+      {detailRow && (
+        <RowDetailsModal row={detailRow} hasC={hasC} onClose={() => setDetailRow(null)} />
+      )}
     </>
   );
 }

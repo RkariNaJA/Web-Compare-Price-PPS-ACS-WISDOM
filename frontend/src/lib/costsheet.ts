@@ -26,6 +26,9 @@ export interface CostsheetEntry {
   fobVal: string;   // winning FOB as a trimmed string — source depends on isExt
   finalFobVal: string;  // raw `Final FOB` cell (display-only; shown in its own column)
   extFobVal: string;    // raw `Extended Size FOB` cell (display-only; shown in its own column)
+  fobL4LVal: string;       // size-picked L4L (THB) FOB — same isExt rule as fobVal
+  finalFobL4LVal: string;  // raw `FinalFOBCur(L4L)` cell
+  extFobL4LVal: string;    // raw `Extended Size FOB(L4L)` cell
   versionVal: string;      // CBD Version as a trimmed string
   costSheetNoVal: string;  // Cost Sheet No. as a trimmed string
   createdByVal: string;    // `Created CBD by` — drives Team Mer
@@ -46,7 +49,11 @@ export interface CostsheetMatch {
   fobVal: string;      // size-picked FOB (Final or Extended) — the value the verdict uses
   finalFobVal: string; // the winning row's `Final FOB`, whatever its size
   extFobVal: string;   // the winning row's `Extended Size FOB`, whatever its size
-  dateStr: string;    // YYYY-MM-DD in LOCAL time (not UTC — see date formatting note below)
+  fobL4LVal: string;       // size-picked L4L (THB) FOB — what a THB PPS quote is compared against
+  finalFobL4LVal: string;  // the winning row's `FinalFOBCur(L4L)`
+  extFobL4LVal: string;    // the winning row's `Extended Size FOB(L4L)`
+  isExt: boolean;      // true = fobVal came from `Extended Size FOB` (extended WISDOM size)
+  dateStr: string;   // YYYY-MM-DD in LOCAL time (not UTC — see date formatting note below)
   sizeRaw: string;
   sizeNorm: string;
   versionVal: string;      // CBD Version of the winning Costsheet row
@@ -72,6 +79,9 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
   const sizeIdx = findCostsheetIdx(hdr, 'size');
   const fobIdx = findCostsheetIdx(hdr, 'fob');
   const extFobIdx = findCostsheetIdx(hdr, 'extFob');
+  // L4L (THB) prices — not fatal when absent: THB quotes then simply find no WISDOM price.
+  const fobL4LIdx = findCostsheetIdx(hdr, 'fobL4L');
+  const extFobL4LIdx = findCostsheetIdx(hdr, 'extFobL4L');
   const dateIdx = findCostsheetIdx(hdr, 'date');
   // Extra display-only columns — absence is not fatal (they just render as em-dashes).
   const versionIdx = findCostsheetIdx(hdr, 'version');
@@ -110,11 +120,17 @@ export function buildCostsheetIndex(dc: TableData | null): CostsheetIndex | null
     const fobVal = srcIdx !== -1 ? String(row[srcIdx] ?? '').trim() : '';
     const finalFobVal = fobIdx !== -1 ? String(row[fobIdx] ?? '').trim() : '';
     const extFobVal = extFobIdx !== -1 ? String(row[extFobIdx] ?? '').trim() : '';
+    const finalFobL4LVal = fobL4LIdx !== -1 ? String(row[fobL4LIdx] ?? '').trim() : '';
+    const extFobL4LVal = extFobL4LIdx !== -1 ? String(row[extFobL4LIdx] ?? '').trim() : '';
+    const fobL4LVal = isExt ? extFobL4LVal : finalFobL4LVal;
     const versionVal = versionIdx !== -1 ? String(row[versionIdx] ?? '').trim() : '';
     const costSheetNoVal = costSheetNoIdx !== -1 ? String(row[costSheetNoIdx] ?? '').trim() : '';
     const createdByVal = createdByIdx !== -1 ? String(row[createdByIdx] ?? '').trim() : '';
 
-    const entry: CostsheetEntry = { row, szNorm, szRaw, isExt, dateVal, fobVal, finalFobVal, extFobVal, versionVal, costSheetNoVal, createdByVal };
+    const entry: CostsheetEntry = {
+      row, szNorm, szRaw, isExt, dateVal, fobVal, finalFobVal, extFobVal,
+      fobL4LVal, finalFobL4LVal, extFobL4LVal, versionVal, costSheetNoVal, createdByVal,
+    };
 
     // Full 4-part key (color included)
     const key = [
@@ -164,6 +180,10 @@ export function lookupCostsheet(
     fobVal: '',
     finalFobVal: '',
     extFobVal: '',
+    fobL4LVal: '',
+    finalFobL4LVal: '',
+    extFobL4LVal: '',
+    isExt: false,
     dateStr: '',
     sizeRaw: '',
     sizeNorm: '',
@@ -214,6 +234,10 @@ export function lookupCostsheet(
     fobVal: best.fobVal,
     finalFobVal: best.finalFobVal,
     extFobVal: best.extFobVal,
+    fobL4LVal: best.fobL4LVal,
+    finalFobL4LVal: best.finalFobL4LVal,
+    extFobL4LVal: best.extFobL4LVal,
+    isExt: best.isExt,
     dateStr,
     sizeRaw: best.szRaw || '',
     sizeNorm: best.szNorm || '',

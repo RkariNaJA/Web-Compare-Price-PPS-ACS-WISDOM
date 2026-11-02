@@ -41,6 +41,8 @@ export const C_KEY_MAP = {
   size: 'Size',
   fob: 'Final FOB',                // MAX First Input Date wins; this is the value we compare against
   extFob: 'Extended Size FOB',     // used INSTEAD of `fob` when the Costsheet row is an extended size
+  fobL4L: 'FinalFOBCur(L4L)',      // local-currency (THB) Final FOB — compared against THB PPS quotes
+  extFobL4L: 'Extended Size FOB(L4L)', // local-currency (THB) Extended Size FOB
   date: 'First Input Date',
   version: 'CBD Version',          // shown as "Version" in the results table
   costSheetNo: 'Cost Sheet No.',   // shown as "Cost Sheet No" in the results table
@@ -58,6 +60,8 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
   size: ['size', 'sizedata', 'sizecode'],
   fob: ['finalfob', 'finalfobprice', 'finalfobamount'],
   extFob: ['extendedsizefob', 'extsizefob', 'extendsizefob'],
+  fobL4L: ['finalfobcur(l4l)', 'finalfob(l4l)', 'finalfobl4l', 'finalfobcurl4l'],
+  extFobL4L: ['extendedsizefob(l4l)', 'extsizefob(l4l)', 'extendedsizefobl4l', 'extsizefobl4l'],
   date: ['firstinputdate', 'inputdate', 'firstinput'],
   version: ['cbdversion', 'version'],
   costSheetNo: ['costsheetno', 'costsheetnumber', 'costsheet#'],
@@ -70,6 +74,11 @@ export const C_KEY_ALIASES: Record<keyof typeof C_KEY_MAP, string[]> = {
 // compared, because the ACS and Costsheet FOBs are all in this currency. Promote to a
 // user-facing setting when real multi-currency support arrives.
 export const PREFERRED_CURRENCY = 'USD';
+
+// Currency of the Costsheet (WISDOM) L4L price columns (`FinalFOBCur(L4L)` /
+// `Extended Size FOB(L4L)`). A PPS quote in this currency is compared against WISDOM's
+// L4L price only — ACS carries no price in it yet, so ACS is skipped for that row.
+export const L4L_CURRENCY = 'THB';
 
 // When loading a PPS file, keep ONLY these columns. Everything else is dropped
 // so the comparison only carries the columns it uses.
