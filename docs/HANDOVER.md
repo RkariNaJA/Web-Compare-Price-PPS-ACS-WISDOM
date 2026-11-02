@@ -2,7 +2,7 @@
 
 > Full technical reference for the 3-way validator dashboard, written so a new engineer can take ownership without asking questions.
 
-**Last updated:** 2026-10-28 · **Original author / design contact:** BY PCK
+**Last updated:** 2026-11-02 · **Original author / design contact:** BY PCK
 
 [← Back to the project overview](../README.md)
 
@@ -186,7 +186,7 @@ Everything the app does, in one page. Each rule links to its full section. **Ord
 
 ### What it answers
 
-> For every PPS quote row: does `LOCAL_QUOTE_AMOUNT` equal **both** the ACS FOB **and** the WISDOM Costsheet FOB?
+> For every PPS quote row: does `LOCAL_QUOTE_AMOUNT` equal **both** the ACS FOB **and** the WISDOM Costsheet FOB, in the quote's own currency (USD or THB)?
 
 Three sources, all read-only: **ACS** (`dbo.ACS`) · **PPS** (`dbo.PPS`) · **Costsheet/WISDOM** (`dbo.VIEW_COSTSHEET_WISDOM`). The only thing the app ever writes is `annotations.db` (Error From / Done, groups, logs).
 
@@ -203,13 +203,13 @@ FRONTEND  load (FileSlotPPS / FileSlotACS / FileSlotCostsheet)
   5  stash raw size in ORIG_SIZE_DATA, overwrite SIZE_DATA with the bucket          §6.2
 
 FRONTEND  Validate (comparison.ts → runComparison)
-  6  preferUSDRows      collapse USD/THB twins   ← BEFORE dedup                      ↑ top
+  6  currencyTwinTest   flag THB copies of USD quotes (both rows kept)            ↑ top
   7  dedupePPSRows      collapse quote history   ← key INCLUDES the amount           ↑ top
   8  build ACS index    by Season|Style|Colour|Factory (+ a no-colour variant)      §6.1
   9  per PPS row → pick ACS row (5-tier size fallback)                              §6.3
- 10  pick ACS FOB column: FinalFOB vs ExtSzFOB                                       §6.4
+ 10  pick ACS FOB column: FinalFOB vs ExtSzFOB (THB: LocalCurrencyFOB vs LocalExtSzFOB) §6.4
  11  pick Costsheet row: MAX First Input Date *within the size-matched subset*      §6.5
- 12  pick Costsheet FOB column: Final FOB vs Extended Size FOB                       §6.5
+ 12  pick Costsheet FOB column: Final FOB vs Extended Size FOB (THB: the (L4L) pair) §6.5
  13  verdictOf(row) → match | diff | noKey | notCompared                             §6.6
 ```
 
@@ -225,14 +225,14 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **3 · Two hash indexes, built once per run** — keyed on **Season + Style + Colour + Factory** (`JOIN_KEY_PAIRS`), plus a **no-colour** variant on Season + Style + Factory. Size is _not_ in either key. §6.1
 - **4 · Pick one ACS row per PPS row — 5-tier size fallback** — exact `EXTRACTED_SIZE` → token overlap (split on `_`/`-`) → substring → any row that isn't a `reg_size` row (only when the query isn't `ALL_REG_SIZE_RB`) → first candidate. This is how a PPS `S` legitimately matches an ACS `ALL_REG_SIZE_RB` row. §6.3
   - The **no-colour index is used only when** the full key found nothing **and** the PPS colour normalises to `all_solid`. (The Costsheet falls back unconditionally — see C·3.)
-- **5 · Pick the ACS FOB column** — ACS carries two: `FinalFOB` when the PPS size equals the CBDID-derived size, `ExtSzFOB` when it doesn't (i.e. the size fell back). One ACS row can price several sizes. §6.4
+- **5 · Pick the ACS FOB column** — ACS carries two: `FinalFOB` when the PPS size equals the CBDID-derived size, `ExtSzFOB` when it doesn't (i.e. the size fell back). One ACS row can price several sizes. A THB quote reads the local pair instead, `LocalCurrencyFOB` / `LocalExtSzFOB`, by the same rule. §6.4
 
 #### B. PPS side (`dbo.PPS`) — 5
 
 - **1 · Strip to `STRICT_B_COLS` + shadow the size** — on load, everything outside `STRICT_B_COLS` is dropped; the raw size is copied into **`ORIG_SIZE_DATA`** and `SIZE_DATA` is overwritten with its bucket (`S`/`M`/`L` → `ALL_REG_SIZE_RB`, `3XL-T` → `ALL_EXTEND_SIZE_RB`). `LOCAL_CURRENCY` and `INSERT_DATE` are in that list _because_ B·2 and B·3 need them. §6.2
-- **2 · Collapse currency twins (`preferUSDRows`) — runs FIRST** — `dbo.PPS` quotes the same price once per currency (4.00 USD _and_ 124.00 THB). Group on Season + Style + Colour + `ORIG_SIZE_DATA` — **no amount**, because the amount is the very thing that differs — and keep only `PREFERRED_CURRENCY` when the group has it. A THB-only group passes through untouched. ↑ top
+- **2 · Flag currency twins (`currencyTwinTest`)** — `dbo.PPS` quotes the same price once per currency (4.00 USD _and_ 124.00 THB). **Both rows are shown** (since 2026-11-02). Group on Season + Style + Colour + `ORIG_SIZE_DATA` — **no amount**, because the amount is the very thing that differs — and flag the non-`PREFERRED_CURRENCY` row as `currencyTwin` when the group also has a USD row. Summaries skip twins. ↑ top
 - **3 · Collapse quote history (`dedupePPSRows`) — runs SECOND** — `dbo.PPS` is an append-only log (~4× redundant rows). Key = Season + Style + Colour + **`ORIG_SIZE_DATA`** + **`LOCAL_QUOTE_AMOUNT`**, newest `INSERT_DATE` wins. `ORIG_SIZE_DATA` (not the bucket) is what keeps all 9 sizes alive; the amount is in the key so a genuinely different price stays a separate row. ↑ top
-- **4 · Flag comparability** — a row is comparable when `LOCAL_CURRENCY` is USD **or blank**. A non-USD quote can't be compared against a USD FOB, so its comparison is **skipped**, not failed → verdict `notCompared`, and it never inflates Diff.
+- **4 · Pick the price currency** — USD (or blank) quotes compare against ACS `FinalFOB`/`ExtSzFOB` and WISDOM `Final FOB`/`Extended Size FOB`; THB quotes (`L4L_CURRENCY`) against ACS `LocalCurrencyFOB`/`LocalExtSzFOB` and WISDOM `FinalFOBCur(L4L)`/`Extended Size FOB(L4L)` (`CompRow.l4l`). Any other currency has nothing to compare against, so its comparison is **skipped**, not failed → verdict `notCompared`, and it never inflates Diff. `acsCompared` says whether ACS took part (false only if ACS was loaded without the local columns).
 - **5 · Build the stable `rowKey`** — `FTYCODE | Season | Style | Colour | ORIG_SIZE | amount`, trimmed + lowercased. Same fields as the de-dup key plus factory, so a saved Error From / Done annotation maps back to exactly one row after every re-validation. `comparison.ts` → `makeRowKey`
 
 #### C. WISDOM / Costsheet side (`dbo.VIEW_COSTSHEET_WISDOM`) — 6
@@ -240,7 +240,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **1 · Resolve headers by alias** — the view gets renamed columns, so each logical column (`fob`, `extFob`, `date`, …) is matched against `C_KEY_ALIASES` after dropping spaces/underscores/dots/hyphens. A missing _critical_ column is a **warning, not a crash** — the 3-way check degrades to 2-way. `costsheet.ts`
 - **2 · Normalise bare group sizes** — `ALL_REG_SIZE` / `ALL_EXTEND_SIZE` gain the `_RB` suffix so they line up with how ACS and PPS spell the same buckets.
 - **3 · Two indexes, same shape as ACS** — full key (Season + Style + Colour + Factory) and a no-colour key. Here the no-colour fallback fires **whenever the full key misses**, with no `all_solid` precondition. §6.5
-- **4 · Pick the Costsheet FOB column per row, by the row's OWN size** — `Extended Size FOB` when `normalizeCostsheetSizeToken` says extended, else `Final FOB`. That resolver checks `EXTEND_SIZE` **first**, so `4X` and `48` (present in _both_ size lists) price as extended here while still matching as regular. It decides the **column only** — never the matching key. §6.5
+- **4 · Pick the Costsheet FOB column per row, by the row's OWN size** — `Extended Size FOB` when `normalizeCostsheetSizeToken` says extended, else `Final FOB` (for a THB quote, the `(L4L)` versions of the same two columns). That resolver checks `EXTEND_SIZE` **first**, so `4X` and `48` (present in _both_ size lists) price as extended here while still matching as regular. It decides the **column only** — never the matching key. §6.5
 - **5 · Size-filter, then MAX(First Input Date) _within_ that subset** — 3-tier size filter (exact `szNorm` → token/substring → all candidates), then the latest date wins **inside the size-matched set**, so a newer XL record can't beat the S record you asked for. The backend's `ORDER BY date DESC, version DESC` exists only to break **date ties** (first-seen wins on a tie). An extended row whose `Extended Size FOB` is blank is reported **unmatched** rather than falling back to `Final FOB`. §6.5
   - The Costsheet lookup runs **even when ACS found nothing**, so a `noKey` row still displays its WISDOM record.
 - **6 · Team Mer from the winning row's `Create CBD by`** (the view's real spelling — not "Created") — the same winning row that gives Version / Cost Sheet No. supplies the creator, which `merTeam.ts` looks up in the master from `GET /get_mer_team_master` (`mer_team.py`, reading `Data/Master_MerDevTeam.xlsx`, cached by file mtime). Case/space-insensitive. A dev in several teams belongs to all of them. No Costsheet match → `(No Costsheet)`; blank / unknown creator or master not loaded → `(Unassigned)`.
@@ -248,7 +248,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 #### D. The comparison & verdict — 4
 
 - **1 · Compare numerically, with an epsilon** — `Math.abs(a - b) < 0.0001`, so `2.8` vs `2.7999999` is a Match. Case-insensitive string equality only when either side isn't a number.
-- **2 · Three-way when File C is loaded, two-way when it isn't** — with WISDOM loaded, `LOCAL_QUOTE_AMOUNT` must equal **both** FOBs. Without it, only ACS is checked. §6.6
+- **2 · Three-way when File C is loaded, two-way when it isn't** — with WISDOM loaded, `LOCAL_QUOTE_AMOUNT` must equal **both** FOBs (in the quote's currency). Without it, only ACS is checked. §6.6
 - **3 · `cMatch` is three-valued** — `true` / `false` (found but different) / **`null`** (no Costsheet row at all → renders "No CS"). Collapsing null into false would report a missing record as a price error.
 - **4 · Derive every verdict through `verdictOf()`** — `noKey` (no ACS row) → `notCompared` (not comparable) → `match` / `diff`, checked in that order, in **one** function. The table, Summary donut, CSV export and toolbar counts all call it; it used to be copy-pasted in four places, which is why a fourth state couldn't be added consistently. §6.6
 
@@ -269,7 +269,7 @@ Six areas, **24 pieces of logic** in total. Each bullet is one rule, in the orde
 - **`serve.py` never hot-reloads.** Waitress loads the module once. A corrected `.py` on disk changes nothing until restart. Cost 21 minutes once.
 - **`dist/` is compiled output.** Editing `frontend/src/` does nothing to a running server until `npm run build` _and_ the folder is copied. Delete the old `dist/` first — Vite hashes filenames, so merging leaves stale bundles.
 - **`annotations.db` is data, not code.** Annotations, groups **and** logs live in that one file. It is per-machine and gitignored. **Never copy it between machines** — it overwrites the target's history.
-- **`collapsedRows` _includes_ `currencyFilteredRows`.** They are not disjoint; subtract for a duplicates-only figure.
+- **THB copies are in the table but not in the counts.** `summarize()` and `sourceStats()` skip `currencyTwin` rows, so the Summary and result cards count each quote once. The toolbar verdict buttons count every row in the table, twins included.
 - **`SELECT *` has no `ORDER BY`.** Never rely on ACS/PPS row order; ties must be broken explicitly.
 - **`normalizeSizeToken` ≠ `normalizeCostsheetSizeToken`.** The Costsheet one checks EXTEND first, so `4X` and `48` (in _both_ size lists) resolve differently. It decides the FOB _column_ only — never the matching key.
 - **Two verdict namings.** `verdictOf` returns camelCase (`noKey`), `FilterCategory` is lowercase (`nokey`). A cast compiles and silently filters nothing.
@@ -346,7 +346,18 @@ SEASON_YEAR  +  STYLE  +  COLOR  +  ORIG_SIZE_DATA  +  LOCAL_QUOTE_AMOUNT
 
 **Per-factory impact:** HIT 76,932 → 23,036 · HTV 19,435 → 3,615 · HIC 11,274 → 2,293 · HSN 778 → 185.
 
-### Currency twins run BEFORE de-duplication (added 2026-08-06)
+### Currency twins: both shown, counted once (2026-08-06, changed 2026-11-02)
+
+> **Changed 2026-11-02:** users asked to see every currency, so THB twins are **no longer dropped**. A quote held in USD and THB now gives **two rows**: USD compared as usual, THB marked **Not Compared** (ACS / WISDOM only carry USD prices today; THB prices for them are planned). `preferUSDRows` was replaced by `currencyTwinTest`, which keeps every row and flags the THB copy as `CompRow.currencyTwin`. `summarize()` (Summary donuts) and `sourceStats()` (result cards) skip twins, so their numbers are unchanged. A THB-only quote is not a twin and is still counted as Not Compared. The two rows never merge in `dedupePPSRows` or clash in saved annotations, because both keys include the amount. The toast reports `N non-USD copies shown, not in summary` and `collapsedRows` is now duplicates only. The history below describes the original drop-THB behaviour.
+
+> **THB compared against WISDOM L4L (2026-11-02):** the WISDOM view also carries THB prices, `FinalFOBCur(L4L)` and `Extended Size FOB(L4L)` (constants `fobL4L` / `extFobL4L` in `C_KEY_MAP`, currency `L4L_CURRENCY = 'THB'`; the L4L columns are treated as THB for every row, `L4LOrderCountry` is not read). A THB quote now:
+> - is checked against WISDOM's size-picked L4L price (same Final vs Extended rule, `isExt`), via `wisdomFields()` in `comparison.ts`, which also puts the L4L values in the two WISDOM FOB columns for that row (`CompRow.l4l`, shown with a `THB` tag);
+> - **skipped ACS** at first (`CompRow.acsCompared = false`; superseded by the ACS local prices below, and still the fallback when ACS lacks those columns); the ACS picked cell reads violet "not compared" and the verdict rests on WISDOM alone: `valueMatch = cMatch === true`;
+> - gets a real **Match / Diff** when the Costsheet is loaded, with reasons `PPS!=WISDOM THB` or `No WISDOM THB price` (blank L4L cell); without the Costsheet it is still **Not Compared** (`comparable = acsCompared || (l4l && hasC)`).
+>
+> Summaries still skip THB twins (each quote counted once); a THB-only quote now counts as Match / Diff instead of Not Compared. The result cards count ACS "compared" on `acsCompared` rows only.
+>
+> **THB compared against ACS local prices too (2026-11-02):** `dbo.ACS` gained `LocalCurrencyFOB` and `LocalExtSzFOB` (THB; ~99% of rows filled, ~33.8× the USD price on average). A THB quote now reads that pair instead of `FinalFOB` / `ExtSzFOB`, with the **same size rule** (`fobSource`: PPS size = CBDID size → `LocalCurrencyFOB`, else `LocalExtSzFOB`), so `acsCompared` is true and THB rows get the full **3-way** check: PPS THB vs ACS local vs WISDOM L4L. The two ACS FOB columns show the local values with a `THB` tag; reasons read `PPS!=ACS THB` / `PPS!=WISDOM THB`; the popup names the ACS column used. Without the Costsheet, a THB row falls back to PPS vs ACS local, like USD. If ACS is loaded **without** the local columns, `runComparison` warns (`ACS has no LocalCurrencyFOB / LocalExtSzFOB ...`) and THB rows skip ACS as in the step above. Column lookup: `localFobIdx` / `localExtSzFobIdx` in `comparison.ts`.
 
 `dbo.PPS` quotes the same price **once per currency**. `STYLE-A` / `SU27` / `HIT` / `4XL` held **4.00 USD** and **124.00 THB** — the same price at a ~31 rate. Because `LOCAL_QUOTE_AMOUNT` is deliberately part of the de-dup key (above), the two amounts looked like two different quotes and **both survived to the results table** as a phantom duplicate.
 
@@ -368,7 +379,7 @@ The amount is excluded **because it is the very thing that differs between twins
 
 **Measured on the live DB** (grouped by factory · season · style · colour · size): **~4.8k** groups hold both currencies (the duplicate), ~22k are USD-only, **5** are THB-only (styles `STYLE-D`, `STYLE-E`), and **174** hold two or more genuinely different USD amounts — those still yield one row per amount, unchanged.
 
-**Caveat:** `collapsedRows` **includes** `currencyFilteredRows`; they are not disjoint. `rawPPSRows` is summed before the currency pass, so subtract one from the other for a duplicates-only figure — `App.tsx` does exactly that when building the Validate toast.
+**Caveat (until 2026-11-02, no longer applies):** `collapsedRows` used to include the dropped currency rows (`currencyFilteredRows`). Nothing is dropped for currency now, so `collapsedRows` counts history duplicates only.
 
 ---
 
@@ -774,6 +785,7 @@ Run: `python -m pytest tests/ -v`
 | `components/DataSummaryBar.tsx`    | The **result cards** above the results: one card per source (PPS rows compared · ACS / Costsheet coverage + FOB agreement), plus **Re-validate** / **Change data**. |
 | `components/ResultsToolbar.tsx`    | Two fixed rows — row 1: stats + **Save** (disabled for read-only users) / Export CSV; row 2: verdict buttons, dropdowns, search, Clear Filters. |
 | `components/ResultsTable.tsx`      | **The big results grid** with the sticky-right verdict column.                                                                           |
+| `components/RowDetailsModal.tsx`   | Pop-up behind `details ›` on Diff and No Key Match rows: price/size breakdown or missing-key diagnostic.                                  |
 | `components/SummaryDashboard.tsx`  | Validation Summary — a donut per factory (click → per-season drop-down) + factory totals (all users).                                                                  |
 | `components/GroupAdmin.tsx`        | Admin screen: create groups, add members, set edit/manage (manager-only).                                                                |
 | `components/LogDashboard.tsx`      | Admin Log page: online-now / logins / change history (manager-only).                                                                     |
@@ -824,7 +836,7 @@ Run: `python -m pytest tests/ -v`
 | Fix a row that says "No Key Match" but shouldn't    | `lib/comparison.ts` (index build) + `lib/normalize.ts` (`normalizeJoinKey`)                                                                              |
 | Fix the wrong WISDOM row being picked               | `lib/costsheet.ts` → `lookupCostsheet`                                                                                                                   |
 | Fix a row showing another colour's ACS FOB          | `sql_backend.py` → `expand_colorway_rows` ([§4.3](#43-colorwaycode-row-expansion))                                                                       |
-| Change which currency is compared / add THB support | `lib/constants.ts` → `PREFERRED_CURRENCY`; `lib/comparison.ts` → `preferUSDRows`                                                                         |
+| Change which currency is compared / add THB support | `lib/constants.ts` → `PREFERRED_CURRENCY`, `L4L_CURRENCY`; `lib/comparison.ts` → `acsCompared` / `l4l` / `comparable`, ACS `localFobIdx` / `localExtSzFobIdx`, `wisdomFields`, `currencyTwinTest`; `lib/summary.ts` / `lib/sourceStats.ts` (twin skip) |
 | Add or change a verdict state                       | `lib/comparison.ts` → `verdictOf` ([§6.6](#66-3-way-verdict-logic)) — then audit every `valueMatch` / `cMatch` branch                                    |
 | Change which FOB column WISDOM reads for a size     | `lib/costsheet.ts` → `isExt` / `srcIdx` in `buildCostsheetIndex`; size lists in `lib/constants.ts` ([§6.5](#65-costsheet-matching-max-first-input-date)) |
 | Extended sizes all show "No CS"                     | [§12 troubleshooting](#extended-sizes-all-show-no-cs-but-regular-sizes-are-fine) — usually a renamed view column                                         |
@@ -916,6 +928,10 @@ Key columns used by the frontend:
 | `CBDID`          | Source of `EXTRACTED_SIZE`                 |
 | `FinalFOB`       | FOB to use when PPS size == ACS CBDID size |
 | `ExtSzFOB`       | FOB to use when PPS size != ACS CBDID size |
+| `LocalCurrencyFOB` | THB version of `FinalFOB`, for THB quotes (optional; added 2026-11-02) |
+| `LocalExtSzFOB`  | THB version of `ExtSzFOB`, for THB quotes (optional; added 2026-11-02) |
+
+Every `dbo.ACS` record is an **all-sizes** record: the CBDID size is `ALL_REG_SIZE_RB` or an option/variant suffix (`RB`, `LB`, `OPTION1`, …), **never** `ALL_EXTEND_SIZE_RB`. The extended-size price lives in `ExtSzFOB` on that same record, which is why §6.4 picks the column from the **PPS** size, not the ACS one.
 
 ### 3.2 File B — PPS Database (`dbo.PPS`, one factory at a time)
 
@@ -938,7 +954,7 @@ header text, and everything else is dropped at ingest:
 | `FTYCODE`               | Maps to ACS `FactoryCode`                                                                                  |
 | `SIZE_DATA`             | Normalised to `ALL_REG_SIZE_RB` / `ALL_EXTEND_SIZE_RB` / literal                                           |
 | `LOCAL_QUOTE_AMOUNT`    | The value being validated                                                                                  |
-| `LOCAL_CURRENCY`        | Which currency that amount is in — `USD` or `THB`. Drives `preferUSDRows` and the **Not Compared** verdict |
+| `LOCAL_CURRENCY`        | Which currency that amount is in — `USD` or `THB`. Picks the price columns compared (USD vs THB/local), drives `currencyTwinTest`, and any other currency → **Not Compared** |
 | `INSERT_DATE`           | Newest-wins tie-break inside `dedupePPSRows`. Never displayed                                             |
 | `ORIG_SIZE_DATA`        | (Added) preserves the raw `SIZE_DATA` for display                                                          |
 
@@ -961,6 +977,8 @@ Columns the frontend expects (matched **tolerantly** — see [§6.1](#61-join-ke
 | Size         | `Size`                  | `SizeData`, `SizeCode`                           |
 | **FOB**      | **`Final FOB`**         | `FinalFOB`, `FinalFobPrice`, `FinalFobAmount`    |
 | **Ext FOB**  | **`Extended Size FOB`** | `ExtendedSizeFOB`, `ExtSizeFOB`, `ExtendSizeFOB` |
+| FOB (THB)    | `FinalFOBCur(L4L)`      | `FinalFOB(L4L)`, `FinalFOBL4L`, `FinalFOBCurL4L` |
+| Ext FOB (THB)| `Extended Size FOB(L4L)`| `ExtSizeFOB(L4L)`, `ExtendedSizeFOBL4L`, `ExtSizeFOBL4L` |
 | Date         | `First Input Date`      | `FirstInputDate`, `InputDate`, `FirstInput`      |
 
 Header matching drops whitespace / underscores / dots / hyphens and lowercases before comparing — so `Final FOB`, `FinalFOB`, `Final_FOB`, and `FINAL-FOB` all resolve to the same logical column.
@@ -974,8 +992,8 @@ view's other FOB-ish columns from colliding with these two:
 | ------------------------ | ---------------------- | --------------------- |
 | `Final FOB`              | `finalfob`             | ✅ regular-size rows  |
 | `Extended Size FOB`      | `extendedsizefob`      | ✅ extended-size rows |
-| `FinalFOBCur(L4L)`       | `finalfobcur(l4l)`     | ❌                    |
-| `Extended Size FOB(L4L)` | `extendedsizefob(l4l)` | ❌                    |
+| `FinalFOBCur(L4L)`       | `finalfobcur(l4l)`     | ✅ THB quotes, regular-size rows (since 2026-11-02) |
+| `Extended Size FOB(L4L)` | `extendedsizefob(l4l)` | ✅ THB quotes, extended-size rows (since 2026-11-02) |
 | `Extended Size Adj%`     | `extendedsizeadj%`     | ❌                    |
 
 ---
@@ -1259,6 +1277,12 @@ else:
 
 The `FOB Source` column in the results renders one of `Final FOB` / `ExtSzFOB` / `N/A` as a coloured pill.
 
+**THB quotes (since 2026-11-02)** use the same rule on ACS's local pair: `LocalCurrencyFOB` where USD would use `FinalFOB`, `LocalExtSzFOB` where it would use `ExtSzFOB` (`useLocal` in `runComparison`). If ACS is loaded without those columns, `runComparison` warns and THB rows skip ACS (`acsCompared = false`).
+
+**Why the PPS size decides, not the ACS size.** ACS has no extended-size records at all (see §3.1): an extended PPS size such as `3XL` matches the all-sizes record, whose CBDID size reads `ALL_REG_SIZE_RB`, and must be priced from that record's `ExtSzFOB`. Following the ACS record's own size would mean `FinalFOB` for every row and turn correct extended-size quotes into Diffs. So on such a row the table shows ACS CBDID SIZE `ALL_REG_SIZE_RB` next to a highlighted **ACS EXT SIZE FOB**; that is correct.
+
+**ACS and WISDOM pick their column differently.** ACS: PPS size vs ACS size (above). WISDOM: the size of the WISDOM record it found (§6.5). When WISDOM has a record for the extended size they agree; when it has only a regular / all-sizes record, its size filter falls back to that record and WISDOM prices the extended quote from **Final FOB** while ACS uses **ExtSzFOB**. Known and currently kept as-is (open question, 2026-11-02).
+
 ### 6.5 Costsheet Matching (MAX First Input Date)
 
 **Which FOB column the Costsheet side reads (since 2026-08-05).** ACS carries two FOB
@@ -1287,6 +1311,8 @@ const srcIdx = isExt ? extFobIdx : fobIdx; // Extended Size FOB vs Final FOB
   row's `SIZE_DATA` with that same function. If the two ever disagree, a PPS `4X` row stops
   matching the Costsheet `4X` row and silently takes another size's price. This was a real
   bug caught in review — keep the two concerns separate.
+
+**THB quotes (since 2026-11-02)** read the `(L4L)` pair with the same `isExt` rule: `FinalFOBCur(L4L)` for a regular-size record, `Extended Size FOB(L4L)` for an extended one (`fobL4LVal` on the entry; `wisdomFields()` in `comparison.ts` chooses USD vs L4L by the quote's currency). The L4L columns are treated as THB for every row; `L4LOrderCountry` is not read. A blank L4L cell on the winning record gives a Diff with reason `No WISDOM THB price`.
 
 **Empty `Extended Size FOB`.** An extended row whose ext-FOB cell is blank has no usable
 price: `lookupCostsheet` returns `matched: false`, the row renders `—` and counts as
@@ -1332,7 +1358,7 @@ The rightmost `ACS Match?` column shows one of **four** states per row:
 | State            | Condition                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
 | **No Key Match** | ACS had no row matching the PPS key (even with color fallback)                                   |
-| **Not Compared** | Quoted in a currency other than `PREFERRED_CURRENCY` — the comparison is **skipped**, not failed |
+| **Not Compared** | Quoted in a currency with no price to compare against (not USD / THB, or THB with neither ACS local columns nor the Costsheet loaded) — the comparison is **skipped**, not failed |
 | **Match**        | See condition below                                                                              |
 | **Diff**         | None of the above                                                                                |
 
@@ -1348,7 +1374,7 @@ export function verdictOf(r: CompRow): Verdict {
 }
 ```
 
-`noKey` is checked **first** on purpose: a row with no ACS match is a key problem regardless of what currency it was quoted in. A consequence worth knowing — with today's data **`notCompared` never actually fires**. A THB row only survives `preferUSDRows` when its group has no USD twin (5 groups, all HIT), and every one of those has no matching ACS row, so they all resolve to `noKey`. The state is correct but dormant; it activates the moment a THB-only group gains a matching ACS row.
+`noKey` is checked **first** on purpose: a row with no ACS match is a key problem regardless of what currency it was quoted in. Since 2026-11-02 THB quotes are shown and checked against ACS's local prices and WISDOM's L4L prices, so they get Match / Diff like USD; **`notCompared`** now only fires for other currencies (or THB when neither ACS local columns nor the Costsheet are available). THB rows with no ACS match still resolve to `noKey`.
 
 **Watch for the skipped-vs-failed trap.** A _skipped_ comparison is indistinguishable from a _failed_ one wherever code branches on a falsy value. `notCompared` needed explicit neutral handling in **four** separate places — the verdict badge, the ACS cell tint (`dbCls`), the WISDOM FOB cell, and the Summary donut — and every one was found only by reading the code, never by a passing build. If you add a fifth verdict, audit every expression derived from `valueMatch`, `cMatch`, `lqVsAcs` or `!isMatch`.
 
@@ -1358,32 +1384,49 @@ The **Match** condition depends on whether Costsheet is loaded:
 
 ```ts
 const acsMatch = hasCData
-  ? lqVsAcs && cMatch === true // 3-way: all three must agree
+  ? (acsCompared ? lqVsAcs : true) && w.cMatch === true // 3-way: every source that took part
   : lqVsAcs; // 2-way: PPS vs ACS only
 ```
 
-- `lqVsAcs` = `parseFloat(LOCAL_QUOTE_AMOUNT) ≈ parseFloat(ACS FOB)` with epsilon `0.0001` (falls back to case-insensitive string equality if either side isn't numeric).
-- `cMatch` = the same comparison against the Costsheet FOB — `Final FOB` for a regular-size Costsheet row, `Extended Size FOB` for an extended-size one (see [§6.5](#65-costsheet-matching-max-first-input-date)); stays `null` if no Costsheet row matched. This is the size-picked `cFobValue`, **not** either of the two WISDOM display columns.
+- `lqVsAcs` = `parseFloat(LOCAL_QUOTE_AMOUNT) ≈ parseFloat(ACS FOB)` with epsilon `0.0001` (falls back to case-insensitive string equality if either side isn't numeric). The ACS FOB is the size-picked USD or local (THB) value. `false` when `acsCompared` is false.
+- `cMatch` = the same comparison against the Costsheet FOB — `Final FOB` for a regular-size Costsheet row, `Extended Size FOB` for an extended-size one, or their `(L4L)` versions for a THB quote (see [§6.5](#65-costsheet-matching-max-first-input-date)); stays `null` if no Costsheet row matched. This is the size-picked `cFobValue`, **not** either of the two WISDOM display columns.
 
 **By design:** when Costsheet is loaded but a row has _no_ Costsheet match (`cMatched = false`, `cMatch = null`), the verdict is **Diff** with reason `No WISDOM` — a 3-way check can't be _confirmed_ if a source is missing data.
 
 **Diff reasons** (rendered under the "✗ Diff" badge, separated by `·` when multiple apply):
 
-| Reason chip   | Trigger                                |
-| ------------- | -------------------------------------- |
-| `PPS!=ACS`    | `lqVsAcs === false`                    |
-| `PPS!=WISDOM` | `hasC && cMatched && cMatch === false` |
-| `No WISDOM`   | `hasC && !cMatched`                    |
+| Reason chip           | Trigger                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `PPS!=ACS`            | `acsCompared && lqVsAcs === false` (`PPS!=ACS THB` on a THB row) |
+| `PPS!=WISDOM`         | `hasC && cMatched && cMatch === false` (USD row)            |
+| `PPS!=WISDOM THB`     | same, on a THB row (compared against the L4L price)         |
+| `No WISDOM THB price` | THB row whose WISDOM record has a blank L4L cell            |
+| `No WISDOM`           | `hasC && !cMatched`                                         |
+
+**Details pop-up** (`RowDetailsModal.tsx`, for **Diff** and **No Key Match** rows): a `details ›` button in the verdict cell (`.dd-open`) sets `detailRow` in `ResultsTable` and opens a modal, rendered through a portal on `<body>` so the sticky verdict cell and the scrolling `.table-wrap` can't clip it. Closes on ×, Esc or a click on the backdrop. Styles are the `.dd-*` rules in `global.css`, all on theme tokens so light and dark both work. Both views open with the row # and the key values (Season / Style / Color / Factory / ...). Display-only.
+
+Diff view:
+- **Likely cause:** which source is the odd one out, using `fobEq` (exported from `comparison.ts`) on the three prices: `PPS differs from both ACS and WISDOM`, `WISDOM differs from PPS and ACS`, `ACS differs from PPS and WISDOM`, `All three prices differ`, or, when WISDOM has no record, whether PPS = ACS.
+- **FOB prices table:** source, column used (ACS `Final FOB` / `ExtSzFOB`, or `LocalCurrencyFOB` / `LocalExtSzFOB` on a THB row; WISDOM `Final FOB` / `Ext Size FOB` from `cIsExt`, with `(L4L)` on a THB row), value, same/differs vs PPS, and PPS − source.
+- **Sizes table:** PPS / ACS / WISDOM sizes with same/differs vs PPS, since the sizes decide which FOB column each side priced from.
+- **WISDOM record used:** Cost Sheet No, Version, Max Input Date, Created CBD by.
+
+No Key Match view (replaces the old inline `<details>` fold in the verdict cell):
+- **Missing in:** `ACS`, plus `WISDOM` when Costsheet is loaded and its lookup found nothing; with one line saying whether ACS has this season + style + factory under other colours or not at all.
+- **ACS lookup:** the join key (`joinKeyStr`), the PPS color, and the colours ACS does have (`dbColorsForKey`, up to 6).
+- **What the other sources hold:** PPS size + FOB, WISDOM size + size-picked FOB (or `no record`).
+- **WISDOM record used**, when there is one.
 
 ### 6.7 CSV Export
 
 Function: `exportComparisonCSV(rows, hasC, annotations)` in `csv.ts`.
 
 - Exports **all** `compRows` — the on-screen filter does **not** affect the CSV.
-- Columns: `Row, Team_Mer, Created_CBD_By, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, LOCAL_QUOTE_AMOUNT, LOCAL_CURRENCY, [Costsheet_Final_FOB, Costsheet_Ext_Size_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Remark, Saved_By, Verdict, Diff_Reason`.
+- Columns: `Row, Team_Mer, Created_CBD_By, MSC_CODE, RESPONSIBLE_DEVELOPER, Season_B, Size_B, Style_B, Color_B, Factory_B, B_Size_Converted, DB_CBDID_Size, FOB_Source, ACS_FOB_Value, ACS_Final_FOB, ACS_Ext_Size_FOB, LOCAL_QUOTE_AMOUNT, LOCAL_CURRENCY, [Costsheet_Final_FOB, Costsheet_Ext_Size_FOB, Costsheet_Max_Input_Date,] Error_From, Done, Remark, Saved_By, Verdict, Diff_Reason`.
 - `Costsheet_Final_FOB` / `Costsheet_Ext_Size_FOB` are the two raw cells, matching the on-screen columns. (Before 2026-09-25 `Costsheet_Final_FOB` held the size-picked value, which for extended sizes was really `Extended Size FOB`.)
 - `Verdict` is `MATCH` / `DIFF` / `NO_KEY_MATCH` — matches the on-screen badge exactly.
-- `Diff_Reason` is populated only for `DIFF` rows, pipe-delimited (e.g. `PPS!=ACS|No_WISDOM`).
+- `Diff_Reason` is populated only for `DIFF` rows, pipe-delimited (e.g. `PPS!=ACS|No_WISDOM`). THB rows use `PPS!=ACS_THB`, `PPS!=WISDOM_THB` and `No_WISDOM_THB_price`.
+- On a THB row, `ACS_FOB_Value` / `ACS_Final_FOB` / `ACS_Ext_Size_FOB` and the two `Costsheet_*_FOB` columns hold the local (THB) prices; `LOCAL_CURRENCY` says which.
 - Cells containing `"`, `,`, or newline are RFC 4180 quoted.
 
 To find problem rows in Excel, filter **`Verdict = DIFF`** or **`Verdict = NO_KEY_MATCH`**.
@@ -1462,23 +1505,27 @@ Column layout when Costsheet is loaded (`hasC = true`):
 # | Master Data (Team Mer / Created CBD by) | MSC_CODE | RESPONSIBLE_DEVELOPER |
 Key Columns (Season/Size/Style/Color/Factory) |
 Size Comparison (PPS SIZE / ACS CBDID SIZE / WISDOM SIZE) |
-FOB Source | PPS FOB | ACS FOB | WISDOM FINAL FOB | WISDOM EXT SIZE FOB |
+FOB Source | PPS FINAL FOB | PPS EXT SIZE FOB | ACS FINAL FOB | ACS EXT SIZE FOB | WISDOM FINAL FOB | WISDOM EXT SIZE FOB |
 Version | Cost Sheet No | Max Input Date |
 Error From | Done | Remark | Changed By | Changed On | ACS Match? (sticky right)
 ```
 
-When `hasC = false`, the WISDOM SIZE / both WISDOM FOB / Version / Cost Sheet No / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2. Leaf column count: **27** with Costsheet, **21** without (`colCount` in `ResultsTable.tsx`, which must match the header rows, since the resizer indices and the measured `<colgroup>` depend on it).
+When `hasC = false`, the WISDOM SIZE / both WISDOM FOB / Version / Cost Sheet No / Max Input Date columns disappear and the Size Comparison `colspan` drops from 3 to 2. Leaf column count: **29** with Costsheet, **23** without (`colCount` in `ResultsTable.tsx`, which must match the header rows, since the resizer indices and the measured `<colgroup>` depend on it).
 
-**WISDOM FOB colours** (`wFobCls` in `ResultsTable.tsx`, applied to both WISDOM FOB cells independently):
+**PPS FOB columns** (`ppsCell` in `ResultsTable.tsx`): PPS has one price per row (`LOCAL_QUOTE_AMOUNT`), so only one of the two holds it, chosen by the PPS size group: `PPS EXT SIZE FOB` when `bSize === 'ALL_EXTEND_SIZE_RB'`, `PPS FINAL FOB` otherwise (regular sizes and sizes in neither list). That cell keeps the verdict colour (green / red / grey No Key / violet not compared) and the currency tag; the other shows an uncoloured `—`. Display-only; the CSV still exports the single `LOCAL_QUOTE_AMOUNT`.
+
+**ACS FOB colours** (`acsFobCls` in `ResultsTable.tsx`): both ACS values are shown (`dbFinalFobValue`, `dbExtFobValue`), but only the column ACS priced from (`fobSource`: `FinalFOB` when PPS size = CBDID size, else `ExtSzFOB`) carries the verdict colour, the same green / red / violet as PPS FOB. The other column shows its value with no colour. No Key Match rows have no ACS row, so both are grey. On a THB row both ACS columns hold ACS's local (THB) prices (`LocalCurrencyFOB` / `LocalExtSzFOB`, with a `THB` tag); only if ACS lacks those columns does it sit out, and its picked column is then violet (`cell-notcompared`). The verdict still uses only the picked `dbFobValue`.
+
+**WISDOM FOB colours** (`wFobCls` in `ResultsTable.tsx`): only the column the WISDOM size picks is coloured: `WISDOM EXT SIZE FOB` when the size is extended (`row.cIsExt`, from `CostsheetEntry.isExt`), `WISDOM FINAL FOB` otherwise. The other column still shows its value, but with no colour, so users don't take it as part of the check. The coloured cell follows:
 
 | Cell state | Colour |
 | --- | --- |
-| value equals **both** PPS FOB and ACS FOB | green (`cell-match`) |
+| value equals **both** PPS FOB and ACS FOB (THB row: equals PPS FOB; the values are the L4L prices) | green (`cell-match`) |
 | value differs from either one | red (`cell-miss`) |
 | blank value, or a No Key Match row (no ACS FOB to compare) | grey (`cell-empty`) |
 | row not compared (non-preferred currency) | violet (`cell-notcompared`) |
 
-Equality is `fobEq`, the same epsilon-`0.0001` numeric check (string fallback) the comparison uses. These colours are display-only; see §6.5 for why they can disagree with the verdict (e.g. green `Final FOB` on an extended-size row that is still a Diff).
+Equality is `fobEq`, the same epsilon-`0.0001` numeric check (string fallback) the comparison uses. These colours are display-only; see §6.5 for why they can disagree with the verdict. Since only the size-picked column is coloured, an extended-size row no longer shows a green `Final FOB` next to a Diff.
 
 **Sticky right:** `ACS Match?` is `position: sticky; right: 0` with a soft left shadow, so the verdict stays visible no matter how wide the table gets. Hover state propagates through the sticky cell.
 
@@ -1502,7 +1549,7 @@ Applied in this order (in `App.tsx`'s `useMemo`):
 3. **Factory dropdown** — exact match.
 4. **MSC Code field** — a native `<datalist>` combo (type to free-filter, or click a suggestion). Case-insensitive **substring** match on PPS `MSC_CODE`; suggestions are the distinct non-empty codes in the current results, sorted.
 5. **Developer field** — same combo behaviour, matching PPS `RESPONSIBLE_DEVELOPER`.
-6. **Search box** — lowercase substring across: all key values, `LOCAL_QUOTE_AMOUNT`, ACS FOB, `MSC_CODE`, `RESPONSIBLE_DEVELOPER`, filename, WISDOM Final FOB, WISDOM Ext Size FOB.
+6. **Search box** — lowercase substring across: all key values, `LOCAL_QUOTE_AMOUNT`, ACS FOB (picked, Final and Ext Size), `MSC_CODE`, `RESPONSIBLE_DEVELOPER`, filename, WISDOM Final FOB, WISDOM Ext Size FOB.
 
 The **✕ Clear Filters** button (next to Export CSV) resets everything at once — verdict categories, both dropdowns, both combo fields, and the search box. It's dimmed/disabled when no filter is active. (The "All" filter button only clears the verdict categories.)
 
@@ -1543,8 +1590,10 @@ Top to bottom:
   2026-10-16 this was a Factory × Season table; the season split now lives in the drop-down.)_
 - **Empty state** — before you've validated it says "run a validation in Compare Data first."
 
-The verdict / factory / season logic is the **same** the results toolbar uses, so the Summary's
-totals always equal the toolbar's Match / Diff / No Key counts. It's **read-only** and **public** —
+The verdict / factory / season logic is the **same** the results toolbar uses. One difference since
+2026-11-02: the Summary (and the result cards) **skip currency twins**, the THB copy of a quote that
+also has a USD row (`CompRow.currencyTwin`), so each quote is counted once. The toolbar counts every
+row in the table, so its numbers can be higher than the Summary's by exactly those THB copies. It's **read-only** and **public** —
 it shows nothing a user can't already see in the Compare table. Switching tabs keeps your results
 (it reads `App`'s state — no re-validate). Charts are hand-rolled (no chart library), token-driven
 for light/dark. Lives in `components/SummaryDashboard.tsx` + `lib/summary.ts` (pure aggregation).
@@ -2033,7 +2082,7 @@ If `ALL_SOLID` is intact and the FOB is still wrong, the colourway genuinely dif
 
 ### Two rows for the same style, size and factory with wildly different PPS FOB
 
-One will be ~31× the other (e.g. `4.00` and `124.00`) — that is USD vs THB for the **same** quote. The fix is `preferUSDRows` (see the [currency section](#currency-twins-run-before-de-duplication-added-2026-08-06)); if you still see both, the **frontend** is stale. Rebuild with `npm run build` and copy the whole `frontend/dist/` folder, deleting the server's old one first — Vite hashes filenames, so merging leaves stale bundles behind.
+One will be ~31× the other (e.g. `4.00` and `124.00`) — that is USD vs THB for the **same** quote. **This is intended since 2026-11-02**: both currencies are shown, each compared against the matching-currency ACS / WISDOM prices (the THB row shows a `THB` tag), and only the USD row counts in the Summary (see the [currency section](#currency-twins-both-shown-counted-once-2026-08-06-changed-2026-11-02)). If a frontend change doesn't show up on the server, rebuild with `npm run build` and copy the whole `frontend/dist/` folder, deleting the server's old one first — Vite hashes filenames, so merging leaves stale bundles behind.
 
 Genuinely different **USD** amounts for one style/size are _not_ a bug: 174 groups have revised quotes, and each keeps its own row and its own verdict.
 

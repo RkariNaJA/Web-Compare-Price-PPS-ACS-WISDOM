@@ -39,13 +39,21 @@ This tool replaces that workflow.
 - **All three sources come from SQL Server** — nothing to export, upload or keep in sync by hand.
 - **Matches rows the way a human would** — normalising sizes, falling back through five levels of
   size specificity, expanding multi-colourway rows, and picking the newest costsheet entry.
-- **Gives every row a verdict** — Match, Diff (with a chip naming *which* source disagrees), or
-  No Key Match, with diagnostics showing what ACS *does* have for related keys.
+- **Checks USD and THB quotes** — a quote held in both currencies shows as two rows, each compared
+  against the matching-currency prices in ACS and WISDOM.
+- **Shows every price side by side** — regular and extended-size FOB for PPS, ACS and WISDOM, with
+  only the price actually used for that row's size highlighted, so the colour never points at a
+  number that wasn't checked.
+- **Gives every row a verdict** — Match, Diff (with a chip naming *which* source disagrees and by
+  how much), No Key Match, or Not Compared for a currency with no price to check against. A
+  **details** pop-up on Diff and No Key Match rows breaks it down: every source's price and size,
+  which column it came from, and which source is the odd one out.
 - **Shared annotations** — an *Error From* dropdown, a *Done* checkbox and a free-text *Remark* per
   row, saved server-side, so what one person marks the next person sees, stamped with who saved it
   (every change is also kept in the admin change log).
 - **Summary view** — a Match / Diff / No Key donut per factory, never lumping factories together;
   click a factory's donut to drop down its per-season numbers, with a factory-totals table below.
+  Each quote is counted once, even when it's listed in two currencies.
 - **Company look** — the corporate orange-and-white theme, with a matching dark mode and a
   Light/Dark switch in the header that remembers each user's choice.
 - **CSV export** of the full comparison, annotations included.
@@ -75,12 +83,13 @@ Order of operations is the whole game. The backend prepares the data, the browse
 **Backend** — stringify every cell, derive a normalised size from the row ID, then expand
 multi-colourway rows into one row per colourway.
 
-**Browser** — collapse currency twins, then collapse quote history down to the live quote, index ACS
-by *season · style · colour · factory*, and for each PPS row:
+**Browser** — keep every currency (USD and THB quotes each become their own row), collapse quote
+history down to the live quote, index ACS by *season · style · colour · factory*, and for each PPS row:
 
 1. Pick the best ACS row using a **5-tier size fallback**
-2. Pick the right ACS price column — regular vs extended size
-3. Pick the costsheet row with the **newest input date within the size-matched subset**
+2. Pick the right ACS price column — regular vs extended size, in the quote's currency
+3. Pick the costsheet row with the **newest input date within the size-matched subset**, and its
+   price column the same way
 4. Compare, and emit a verdict
 
 A row is a **Match** only when every loaded source agrees — with the costsheet loaded, all three;
