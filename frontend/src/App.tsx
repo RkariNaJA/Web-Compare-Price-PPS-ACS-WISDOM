@@ -199,11 +199,12 @@ function AppInner() {
       // onto the freshly-built rows by rowKey.
       loadAnnotations();
       result.warnings.forEach((w) => toast(w, 'err'));
-      const dupOnly = result.collapsedRows - result.currencyFilteredRows;
       const dupNote =
-        dupOnly > 0 ? ` · ${dupOnly.toLocaleString()} duplicate rows collapsed` : '';
-      const curNote = result.currencyFilteredRows
-        ? ` · ${result.currencyFilteredRows.toLocaleString()} non-${PREFERRED_CURRENCY} rows excluded`
+        result.collapsedRows > 0
+          ? ` · ${result.collapsedRows.toLocaleString()} duplicate rows collapsed`
+          : '';
+      const curNote = result.currencyTwinRows
+        ? ` · ${result.currencyTwinRows.toLocaleString()} non-${PREFERRED_CURRENCY} copies shown, not in summary`
         : '';
       const ncNote = result.notComparedCount
         ? ` · ${result.notComparedCount.toLocaleString()} not compared`
@@ -262,6 +263,8 @@ function AppInner() {
           ) ||
           r.localQuoteVal.toLowerCase().includes(q) ||
           r.dbFobValue.toLowerCase().includes(q) ||
+          r.dbFinalFobValue.toLowerCase().includes(q) ||
+          r.dbExtFobValue.toLowerCase().includes(q) ||
           r.mscCode.toLowerCase().includes(q) ||
           r.responsibleDeveloper.toLowerCase().includes(q) ||
           r.merTeams.some((t) => t.toLowerCase().includes(q)) ||

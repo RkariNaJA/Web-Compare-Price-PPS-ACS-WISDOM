@@ -27,8 +27,11 @@ const VERDICT_CSV = {
 function diffReason(r: CompRow, hasC: boolean): string {
   if (r.status !== 'matched' || r.valueMatch || !r.comparable) return '';
   const parts: string[] = [];
-  if (r.lqVsAcs === false) parts.push('PPS!=ACS');
-  if (hasC && r.cMatched && r.cMatch === false) parts.push('PPS!=WISDOM');
+  if (r.acsCompared && r.lqVsAcs === false) parts.push(r.l4l ? 'PPS!=ACS_THB' : 'PPS!=ACS');
+  if (hasC && r.cMatched && r.cMatch === false) {
+    if (r.l4l && !r.cFobValue) parts.push('No_WISDOM_THB_price');
+    else parts.push(r.l4l ? 'PPS!=WISDOM_THB' : 'PPS!=WISDOM');
+  }
   if (hasC && !r.cMatched) parts.push('No_WISDOM');
   return parts.join('|');
 }
@@ -59,6 +62,8 @@ export function exportComparisonCSV(
     'DB_CBDID_Size',
     'FOB_Source',
     'ACS_FOB_Value',
+    'ACS_Final_FOB',
+    'ACS_Ext_Size_FOB',
     'LOCAL_QUOTE_AMOUNT',
     'LOCAL_CURRENCY',
     ...(hasC ? ['Costsheet_Final_FOB', 'Costsheet_Ext_Size_FOB', 'Costsheet_Max_Input_Date'] : []),
@@ -86,6 +91,8 @@ export function exportComparisonCSV(
         r.dbCbdidSize,
         r.fobSource,
         r.dbFobValue,
+        r.dbFinalFobValue,
+        r.dbExtFobValue,
         r.localQuoteVal,
         r.currency,
         ...(hasC ? [r.cFinalFobValue || '', r.cExtFobValue || '', r.cDateStr || ''] : []),

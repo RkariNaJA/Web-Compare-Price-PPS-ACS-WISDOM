@@ -57,9 +57,15 @@ export interface CompRow {
   dbCbdidSize: string;         // ACS size extracted from CBDID
   fobSource: FobSource;        // which ACS FOB column was used
   dbFobValue: string;          // the ACS FOB value picked
+  dbFinalFobValue: string;     // ACS `FinalFOB` of the matched row (display column)
+  dbExtFobValue: string;       // ACS `ExtSzFOB` of the matched row (display column)
   localQuoteVal: string;       // PPS LOCAL_QUOTE_AMOUNT
   currency: string;            // raw LOCAL_CURRENCY ('' when the source has no such column, or the cell is empty)
-  comparable: boolean;         // false = non-preferred currency, so the FOB comparison is skipped
+  comparable: boolean;         // false = no comparison ran (currency with no price to compare against)
+  acsCompared: boolean;        // true = the ACS FOB took part in the verdict (USD, or THB via its local columns)
+  l4l: boolean;                // true = THB quote: ACS / WISDOM values on this row are the local (THB) prices
+  currencyTwin: boolean;       // true = non-preferred-currency copy of a quote that also has a
+                               // preferred-currency row; shown in the table, skipped by the summaries
   valueMatch: boolean;         // the on-screen "Match/Diff" verdict
   status: RowStatus;           // 'matched' = key hit, 'noKeyMatch' = no ACS row found
   joinKeyStr: string;          // debug string of the composite key
@@ -68,6 +74,7 @@ export interface CompRow {
   cFobValue: string;           // size-picked Costsheet FOB (Final or Extended) — what cMatch/verdict use
   cFinalFobValue: string;      // Costsheet `Final FOB` of the winning row (display column)
   cExtFobValue: string;        // Costsheet `Extended Size FOB` of the winning row (display column)
+  cIsExt: boolean;             // true = WISDOM size is extended, so cFobValue is the Ext Size FOB
   cVersionVal: string;         // Costsheet "CBD Version" (shown as "Version")
   cCostSheetNo: string;        // Costsheet "Cost Sheet No."
   cCreatedBy: string;          // Costsheet "Created CBD by" of the winning row ('' when no Costsheet match)
@@ -79,7 +86,7 @@ export interface CompRow {
   cSizeNorm: string;           // normalized size (for matching against PPS)
 
   /* diagnostics — power the "Diff reason" hints and the No Key Match message */
-  lqVsAcs: boolean;            // did LOCAL_QUOTE_AMOUNT equal ACS FOB? (2-way piece of the 3-way)
+  lqVsAcs: boolean;            // did LOCAL_QUOTE_AMOUNT equal ACS FOB? (false when !acsCompared)
   dbHasKey?: boolean;          // (noKeyMatch only) does ACS have ANY row for this key?
   dbColorsForKey?: string[];   // (noKeyMatch only) up to 6 colours seen in DB for this key
 }

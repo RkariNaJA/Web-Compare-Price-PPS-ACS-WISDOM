@@ -3,7 +3,8 @@
  * each source covered, and how often its FOB agreed. Pure — no React.
  *
  * Counts are over ALL compared rows (not the filtered view), so the cards describe
- * the validation run itself.
+ * the validation run itself. Currency twins (the THB copy of a quote that also has a
+ * USD row) are skipped so each quote is counted once, matching the Summary.
  */
 import type { CompRow } from './types';
 
@@ -22,21 +23,32 @@ export interface SourceStats {
 
 type StatRow = Pick<
   CompRow,
-  'srcFile' | 'srcColorIdx' | 'status' | 'comparable' | 'lqVsAcs' | 'cMatched' | 'cMatch'
+  | 'srcFile'
+  | 'srcColorIdx'
+  | 'status'
+  | 'comparable'
+  | 'acsCompared'
+  | 'currencyTwin'
+  | 'lqVsAcs'
+  | 'cMatched'
+  | 'cMatch'
 >;
 
 export function sourceStats(rows: StatRow[]): SourceStats {
   const pps = new Map<string, { name: string; colorIdx: number; rows: number }>();
   const acs: SourceResult = { found: 0, compared: 0, agree: 0 };
   const cs: SourceResult = { found: 0, compared: 0, agree: 0 };
+  let total = 0;
   for (const r of rows) {
+    if (r.currencyTwin) continue;
+    total++;
     const f = pps.get(r.srcFile) ?? { name: r.srcFile, colorIdx: r.srcColorIdx, rows: 0 };
     f.rows++;
     pps.set(r.srcFile, f);
 
     if (r.status === 'matched') {
       acs.found++;
-      if (r.comparable) {
+      if (r.acsCompared) {
         acs.compared++;
         if (r.lqVsAcs) acs.agree++;
       }
@@ -49,5 +61,5 @@ export function sourceStats(rows: StatRow[]): SourceStats {
       }
     }
   }
-  return { total: rows.length, pps: [...pps.values()], acs, cs };
+  return { total, pps: [...pps.values()], acs, cs };
 }

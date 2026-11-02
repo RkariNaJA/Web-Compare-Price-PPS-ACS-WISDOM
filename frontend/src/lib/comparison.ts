@@ -9,14 +9,14 @@
  * Everything here is pure — no React, no fetch. Called on Validate button click.
  */
 import type { CompRow, KeyDisplay, PPSFile, Row, TableData } from './types';
-import { JOIN_KEY_PAIRS, KEY_PAIRS, PREFERRED_CURRENCY } from './constants';
+import { JOIN_KEY_PAIRS, KEY_PAIRS, L4L_CURRENCY, PREFERRED_CURRENCY } from './constants';
 import {
   convertBExtendSize,
   convertBSize,
   extractSizeFromCBDID,
   normalizeJoinKey,
 } from './normalize';
-import { buildCostsheetIndex, lookupCostsheet } from './costsheet';
+import { buildCostsheetIndex, lookupCostsheet, type CostsheetMatch } from './costsheet';
 import { merTeamsFor, type MerTeamMaster } from './merTeam';
 
 // Aggregate output for the UI: rows for the table, plus quick counts and any
@@ -27,10 +27,9 @@ export interface CompareResult {
   diffCount: number;
   noKeyCount: number;
   warnings: string[];
-  collapsedRows: number;         // raw PPS rows that did not survive to output. INCLUDES
-                                  // currencyFilteredRows — subtract it for a duplicates-only figure
-  currencyFilteredRows: number;  // subset of collapsedRows: rows dropped because their group
-                                  // also had a PREFERRED_CURRENCY quote
+  collapsedRows: number;         // raw PPS rows merged away by de-duplication
+  currencyTwinRows: number;      // rows shown in a non-preferred currency whose quote ALSO has a
+                                  // PREFERRED_CURRENCY row (see CompRow.currencyTwin)
   notComparedCount: number;
 }
 
@@ -44,6 +43,44 @@ export function verdictOf(r: CompRow): Verdict {
   if (r.status === 'noKeyMatch') return 'noKey';
   if (!r.comparable) return 'notCompared';
   return r.valueMatch ? 'match' : 'diff';
+}
+
+// Same FOB equality the comparison uses: numeric with a tiny epsilon, else
+// case-insensitive string equality when either side isn't a number.
+// Display code (cell colours, Diff details pop-up) uses this to stay in step.
+export function fobEq(a: string, b: string): boolean {
+  const x = parseFloat(a);
+  const y = parseFloat(b);
+  if (!isNaN(x) && !isNaN(y)) return Math.abs(x - y) < 0.0001;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+// The WISDOM (Costsheet) fields of one CompRow. A THB quote (l4l) reads the L4L price
+// columns, everything else the USD ones; the size rule (Final vs Extended) is the same.
+// cMatch stays null when no Costsheet row was found (differs from false = "found but
+// different value"), and when no comparison runs for this row's currency.
+function wisdomFields(
+  cResult: CostsheetMatch | null,
+  l4l: boolean,
+  comparable: boolean,
+  localQuoteVal: string,
+) {
+  if (!cResult || !cResult.matched) {
+    return {
+      cMatch: null, cFobValue: '', cFinalFobValue: '', cExtFobValue: '',
+      cVersionVal: '', cCostSheetNo: '', cDateStr: '',
+    };
+  }
+  const cFobValue = l4l ? cResult.fobL4LVal : cResult.fobVal;
+  return {
+    cMatch: comparable ? fobEq(localQuoteVal, cFobValue) : null,
+    cFobValue,
+    cFinalFobValue: l4l ? cResult.finalFobL4LVal : cResult.finalFobVal,
+    cExtFobValue: l4l ? cResult.extFobL4LVal : cResult.extFobVal,
+    cVersionVal: cResult.versionVal,
+    cCostSheetNo: cResult.costSheetNoVal,
+    cDateStr: cResult.dateStr,
+  };
 }
 
 // One ACS row plus its original index — kept together so we can trace back
@@ -110,34 +147,37 @@ function makeRowKey(parts: string[]): string {
 
 // dbo.PPS quotes the same price once per currency (USD and THB today), so one logical
 // quote arrives as two rows with different LOCAL_QUOTE_AMOUNTs — 3.71 USD and 115.84 THB
-// are the same price at a ~31 rate. Collapse each (season, style, color, size) group to
-// the preferred currency. The amount is deliberately NOT part of the group key: it is the
-// very thing that differs between twins.
+// are the same price at a ~31 rate. BOTH rows are shown in the table (users asked to see
+// every currency); this returns a predicate that flags the non-preferred twin, i.e. a row
+// quoted in another currency whose (season, style, color, size) group ALSO has a
+// preferred-currency row. Summary counts skip twins so they describe each quote once.
+// The amount is deliberately NOT part of the group key: it is what differs between twins.
 //
-// Groups with NO preferred-currency row pass through untouched, so a THB-only quote still
-// reaches the table (flagged non-comparable via CompRow.comparable). Returns the rows
-// unchanged when LOCAL_CURRENCY is absent — an uploaded spreadsheet has no such column.
-// Runs BEFORE dedupePPSRows, which still keys on the amount and so still keeps genuinely
-// different quotes apart.
-//
+// A quote that exists ONLY in THB is not a twin — it is counted as Not Compared as before.
+// A blank LOCAL_CURRENCY is never a twin (it is treated as preferred, like `comparable`).
+// Always false when LOCAL_CURRENCY is absent — an uploaded spreadsheet has no such column.
 // Like dedupePPSRows, the group key omits FTYCODE — one PPSFile is one factory.
-function preferUSDRows(fileB: PPSFile): Row[] {
+function currencyTwinTest(fileB: PPSFile): (row: Row) => boolean {
+  const never = () => false;
   const h = fileB.headers;
   const curIdx = h.indexOf('LOCAL_CURRENCY');
-  if (curIdx === -1) return fileB.rows;
+  if (curIdx === -1) return never;
   const sizeCol = h.indexOf('ORIG_SIZE_DATA') !== -1 ? 'ORIG_SIZE_DATA' : 'SIZE_DATA';
   const groupIdx = ['SEASON_YEAR', 'STYLE', 'COLOR', sizeCol].map((c) => h.indexOf(c));
-  if (groupIdx.some((i) => i === -1)) return fileB.rows;
+  if (groupIdx.some((i) => i === -1)) return never;
 
   const groupOf = (row: Row) =>
     groupIdx.map((i) => String(row[i] ?? '').trim().toLowerCase()).join('|');
-  const isPreferred = (row: Row) =>
-    String(row[curIdx] ?? '').trim().toUpperCase() === PREFERRED_CURRENCY;
+  const curOf = (row: Row) => String(row[curIdx] ?? '').trim().toUpperCase();
 
   const groupsWithPreferred = new Set<string>();
-  for (const row of fileB.rows) if (isPreferred(row)) groupsWithPreferred.add(groupOf(row));
-
-  return fileB.rows.filter((row) => !groupsWithPreferred.has(groupOf(row)) || isPreferred(row));
+  for (const row of fileB.rows) {
+    if (curOf(row) === PREFERRED_CURRENCY) groupsWithPreferred.add(groupOf(row));
+  }
+  return (row) => {
+    const cur = curOf(row);
+    return cur !== '' && cur !== PREFERRED_CURRENCY && groupsWithPreferred.has(groupOf(row));
+  };
 }
 
 // dbo.PPS is a quote-history log: the same style/color/size/quote is re-inserted
@@ -212,6 +252,14 @@ export function runComparison(
   if (finalFobIdx === -1) throw new Error('Missing "FinalFOB" in ACS DB');
   if (extSzFobIdx === -1) throw new Error('Missing "ExtSzFOB" in ACS DB');
   if (cbdidIdx === -1) throw new Error('Missing "CBDID" in ACS DB');
+  // Local-currency (THB) prices, compared against THB PPS quotes. Not fatal when absent:
+  // THB quotes then skip ACS and rest on WISDOM's L4L price alone.
+  const localFobIdx = dataA.headers.findIndex((h) => /^localcurrency\s*fob$/i.test(h));
+  const localExtSzFobIdx = dataA.headers.findIndex((h) => /^localextszfob$/i.test(h));
+  const acsHasLocal = localFobIdx !== -1 && localExtSzFobIdx !== -1;
+  if (!acsHasLocal) {
+    warnings.push('ACS has no LocalCurrencyFOB / LocalExtSzFOB: THB quotes are checked against WISDOM only');
+  }
 
   const sizeAIdx = dataA.headers.indexOf('EXTRACTED_SIZE');
 
@@ -244,7 +292,7 @@ export function runComparison(
   const compRows: CompRow[] = [];
   let globalRow = 0;  // 1-based row counter across all PPS files, shown in the # column
   let rawPPSRows = 0; // total PPS rows across processed files BEFORE de-duplication
-  let currencyFilteredRows = 0; // rows dropped by preferUSDRows
+  let currencyTwinRows = 0; // non-preferred-currency rows that have a preferred twin
 
   dataBFiles.forEach((fileB) => {
     const bHdr = fileB.headers;
@@ -268,10 +316,10 @@ export function runComparison(
     // Collapse this factory's quote-history duplicates to one row per validation
     // case before comparing (see dedupePPSRows above).
     rawPPSRows += fileB.rows.length;
-    // Collapse currency twins first, then the quote-history duplicates.
-    const preferredRows = preferUSDRows(fileB);
-    currencyFilteredRows += fileB.rows.length - preferredRows.length;
-    const dedupedRows = dedupePPSRows({ ...fileB, rows: preferredRows });
+    // Every currency is kept (USD and THB twins become separate rows — the de-dup key
+    // includes the amount, so they never merge); twins are only flagged for the summaries.
+    const isCurrencyTwin = currencyTwinTest(fileB);
+    const dedupedRows = dedupePPSRows(fileB);
 
     // ── Walk every (de-duplicated) PPS row and match it against ACS + Costsheet ──
     dedupedRows.forEach((rowB) => {
@@ -348,14 +396,20 @@ export function runComparison(
       // exact-string fallback in the ACS/Costsheet comparisons below).
       const localQuoteVal = String(rowB[localQuoteIdx] ?? '').trim();
       const currency = currencyIdx !== -1 ? String(rowB[currencyIdx] ?? '').trim() : '';
-      // A blank LOCAL_CURRENCY cell means "assume preferred" here, so a blank-only group
-      // IS comparable — but preferUSDRows treats a blank cell as NOT preferred, so it is
-      // dropped whenever its group also has a real USD row (see preferUSDRows above). The
-      // two rules deliberately do NOT normalise "the same way" for the blank case; they
-      // only agree once a currency is actually present. Measured 0 blank/NULL
-      // LOCAL_CURRENCY rows in production, so this asymmetry is currently unreachable
-      // (see verify-currency.mjs T18).
-      const comparable = currency === '' || currency.toUpperCase() === PREFERRED_CURRENCY;
+      // Which prices this quote can be checked against:
+      //   - USD (or blank, "assume preferred"; measured 0 blank rows in production):
+      //     ACS FinalFOB / ExtSzFOB + WISDOM Final FOB / Extended Size FOB.
+      //   - THB (L4L_CURRENCY): ACS LocalCurrencyFOB / LocalExtSzFOB + WISDOM
+      //     FinalFOBCur(L4L) / Extended Size FOB(L4L), same size rules. If ACS lacks the
+      //     local columns it is skipped (acsCompared false) and the verdict rests on WISDOM.
+      //   - Anything else: Not Compared.
+      const curU = currency.toUpperCase();
+      const l4l = curU === L4L_CURRENCY;
+      const acsCompared = currency === '' || curU === PREFERRED_CURRENCY || (l4l && acsHasLocal);
+      const hasCData = dataC !== null;
+      const comparable = acsCompared || (l4l && hasCData);
+      const currencyTwin = isCurrencyTwin(rowB);
+      if (currencyTwin) currencyTwinRows++;
 
       // Stable identity for saving Error From / Done — survives re-validation and is
       // identical for every user. Same fields as the de-dup key, plus FTYCODE.
@@ -415,14 +469,19 @@ export function runComparison(
         // FOB source selection:
         //   PPS size == ACS CBDID size  → use FinalFOB (exact size match)
         //   PPS size != ACS CBDID size  → use ExtSzFOB (extended size FOB)
+        // Both raw values are kept for the two display columns; only the picked one
+        // (dbFobValue) feeds the verdict. A THB quote reads ACS's local (THB) pair.
+        const useLocal = l4l && acsHasLocal;
+        const dbFinalFobValue = String(rowA[useLocal ? localFobIdx : finalFobIdx] ?? '').trim();
+        const dbExtFobValue = String(rowA[useLocal ? localExtSzFobIdx : extSzFobIdx] ?? '').trim();
         let fobSource: CompRow['fobSource'];
         let dbFobValue: string;
         if (bConvertedSize.toLowerCase() === dbCbdidSize.toLowerCase()) {
           fobSource = 'FinalFOB';
-          dbFobValue = String(rowA[finalFobIdx] ?? '').trim();
+          dbFobValue = dbFinalFobValue;
         } else {
           fobSource = 'ExtSzFOB';
-          dbFobValue = String(rowA[extSzFobIdx] ?? '').trim();
+          dbFobValue = dbExtFobValue;
         }
 
         // Compare LOCAL_QUOTE_AMOUNT vs ACS FOB. Prefer numeric comparison
@@ -430,47 +489,23 @@ export function runComparison(
         // and only fall back to case-insensitive string equality when either side isn't numeric.
         const numL = parseFloat(localQuoteVal);
         const numF = parseFloat(dbFobValue);
-        // A quote in a non-preferred currency is not comparable against a USD FOB, so no
-        // comparison is performed at all — see verdictOf / CompRow.comparable.
-        const lqVsAcs = !comparable
+        // ACS takes part when it has a price in the quote's currency (see acsCompared
+        // above, and verdictOf / CompRow.comparable).
+        const lqVsAcs = !acsCompared
           ? false
           : !isNaN(numL) && !isNaN(numF)
             ? Math.abs(numL - numF) < 0.0001
             : localQuoteVal.toLowerCase() === dbFobValue.toLowerCase();
 
-        // Costsheet comparison — only if we found a matching Costsheet row.
-        // cMatch stays null when no Costsheet row was found (differs from false =
-        // "found but different value" so the UI can render "No CS" separately).
-        let cMatch: boolean | null = null;
-        let cFobValue = '';
-        let cFinalFobValue = '';
-        let cExtFobValue = '';
-        let cVersionVal = '';
-        let cCostSheetNo = '';
-        let cDateStr = '';
-        if (cResult && cResult.matched) {
-          cFobValue = cResult.fobVal;
-          cFinalFobValue = cResult.finalFobVal;
-          cExtFobValue = cResult.extFobVal;
-          cVersionVal = cResult.versionVal;
-          cCostSheetNo = cResult.costSheetNoVal;
-          cDateStr = cResult.dateStr;
-          // Only the comparison is currency-dependent — a non-preferred-currency quote
-          // cannot be compared against a USD Costsheet FOB, so cMatch stays null ("no
-          // verdict"), while the matched record's own metadata above is still shown.
-          if (comparable) {
-            const numC = parseFloat(cFobValue);
-            cMatch =
-              !isNaN(numL) && !isNaN(numC)
-                ? Math.abs(numL - numC) < 0.0001
-                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
-          }
-        }
+        // Costsheet comparison (USD or L4L prices by currency; see wisdomFields).
+        const w = wisdomFields(cResult, l4l, comparable, localQuoteVal);
 
-        // Final 3-way verdict. When Costsheet is loaded, ALL three must agree.
-        // When Costsheet isn't loaded, fall back to the 2-way LQ vs ACS check.
-        const hasCData = dataC !== null;
-        const acsMatch = hasCData ? lqVsAcs && cMatch === true : lqVsAcs;
+        // Final verdict. When Costsheet is loaded, every source that took part must agree
+        // (ACS sits out only if it has no price in this currency). Without Costsheet,
+        // fall back to LQ vs ACS.
+        const acsMatch = hasCData
+          ? (acsCompared ? lqVsAcs : true) && w.cMatch === true
+          : lqVsAcs;
 
         compRows.push({
           rowIdx: globalRow,
@@ -484,22 +519,28 @@ export function runComparison(
           dbCbdidSize,
           fobSource,
           dbFobValue,
+          dbFinalFobValue,
+          dbExtFobValue,
           localQuoteVal,
           currency,
           comparable,
+          acsCompared,
+          l4l,
+          currencyTwin,
           valueMatch: acsMatch,
           status: 'matched',
           joinKeyStr,
-          cFobValue,
-          cFinalFobValue,
-          cExtFobValue,
-          cVersionVal,
-          cCostSheetNo,
+          cFobValue: w.cFobValue,
+          cFinalFobValue: w.cFinalFobValue,
+          cExtFobValue: w.cExtFobValue,
+          cVersionVal: w.cVersionVal,
+          cCostSheetNo: w.cCostSheetNo,
           cCreatedBy,
           merTeams,
-          cDateStr,
-          cMatch,
+          cDateStr: w.cDateStr,
+          cMatch: w.cMatch,
           cMatched: cResult?.matched ?? false,
+          cIsExt: cResult?.isExt ?? false,
           cSizeVal: cResult?.sizeRaw || '',
           cSizeNorm: cResult?.sizeNorm || '',
           lqVsAcs,
@@ -530,31 +571,7 @@ export function runComparison(
           .filter((v, i, a) => a.indexOf(v) === i)
           .slice(0, 6);
 
-        let cMatch: boolean | null = null;
-        let cFobValue = '';
-        let cFinalFobValue = '';
-        let cExtFobValue = '';
-        let cVersionVal = '';
-        let cCostSheetNo = '';
-        let cDateStr = '';
-        if (cResult && cResult.matched) {
-          cFobValue = cResult.fobVal;
-          cFinalFobValue = cResult.finalFobVal;
-          cExtFobValue = cResult.extFobVal;
-          cVersionVal = cResult.versionVal;
-          cCostSheetNo = cResult.costSheetNoVal;
-          cDateStr = cResult.dateStr;
-          // Only the comparison is currency-dependent — see the identical gate in the
-          // happy path above.
-          if (comparable) {
-            const numC = parseFloat(cFobValue);
-            const numL2 = parseFloat(localQuoteVal);
-            cMatch =
-              !isNaN(numL2) && !isNaN(numC)
-                ? Math.abs(numL2 - numC) < 0.0001
-                : localQuoteVal.toLowerCase() === cFobValue.toLowerCase();
-          }
-        }
+        const w = wisdomFields(cResult, l4l, comparable, localQuoteVal);
 
         compRows.push({
           rowIdx: globalRow,
@@ -568,24 +585,30 @@ export function runComparison(
           dbCbdidSize: '',
           fobSource: 'N/A',
           dbFobValue: '',
+          dbFinalFobValue: '',
+          dbExtFobValue: '',
           localQuoteVal,
           currency,
           comparable,
+          acsCompared,
+          l4l,
+          currencyTwin,
           valueMatch: false,
           status: 'noKeyMatch',
           joinKeyStr,
           dbHasKey: indexA.has(joinKeyStr),
           dbColorsForKey,
-          cFobValue,
-          cFinalFobValue,
-          cExtFobValue,
-          cVersionVal,
-          cCostSheetNo,
+          cFobValue: w.cFobValue,
+          cFinalFobValue: w.cFinalFobValue,
+          cExtFobValue: w.cExtFobValue,
+          cVersionVal: w.cVersionVal,
+          cCostSheetNo: w.cCostSheetNo,
           cCreatedBy,
           merTeams,
-          cDateStr,
-          cMatch,
+          cDateStr: w.cDateStr,
+          cMatch: w.cMatch,
           cMatched: cResult?.matched ?? false,
+          cIsExt: cResult?.isExt ?? false,
           cSizeVal: cResult?.sizeRaw || '',
           cSizeNorm: cResult?.sizeNorm || '',
           lqVsAcs: false,
@@ -610,7 +633,7 @@ export function runComparison(
     noKeyCount,
     warnings,
     collapsedRows,
-    currencyFilteredRows,
+    currencyTwinRows,
     notComparedCount,
   };
 }
